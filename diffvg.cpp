@@ -151,8 +151,22 @@ DEVICE void accumulate_boundary_gradient(const Shape &shape,
             Circle *d_p = (Circle*)d_shape.ptr;
             // velocity for the center is (1, 0) for x and (0, 1) for y
             atomic_add(&d_p->center[0], normal * contrib);
-            // velocity for the radius is the same as the normal
-            atomic_add(&d_p->radius, contrib);
+            if (boundary_data.is_stroke) {
+                // check if the stroke boundary normal is pointing inwards or outwards
+                Matrix3x3f canvas_to_shape = inverse(shape_to_canvas);
+                Vector2f local_normal = xform_normal(canvas_to_shape, normal);
+                const Circle &c = *(const Circle *)shape.ptr;
+                if (dot(local_boundary_pt - c.center, local_normal) > 0.f) {
+                    // velocity for the radius is the same as the normal
+                    atomic_add(&d_p->radius, contrib);
+                } else {
+                    // flip the sign
+                    atomic_add(&d_p->radius, -contrib);
+                }
+            } else {
+                // velocity for the radius is the same as the normal
+                atomic_add(&d_p->radius, contrib);
+            }
             break;
         } case ShapeType::Ellipse: {
             Ellipse *d_p = (Ellipse*)d_shape.ptr;

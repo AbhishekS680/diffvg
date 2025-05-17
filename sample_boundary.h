@@ -22,7 +22,7 @@ Vector2f sample_boundary(const Circle &circle,
                          float t,
                          Vector2f &normal,
                          float &pdf,
-                         BoundaryData &,
+                         BoundaryData &data,
                          float stroke_perturb_direction,
                          float stroke_radius) {
     // Parametric form of a circle (t in [0, 1)):
@@ -41,6 +41,7 @@ Vector2f sample_boundary(const Circle &circle,
             // normal should point towards the perturb direction
             normal = -normal;
         }
+        data.is_stroke = true;
     }
     return ret;
 }
@@ -50,7 +51,7 @@ Vector2f sample_boundary(const Ellipse &ellipse,
                          float t,
                          Vector2f &normal,
                          float &pdf,
-                         BoundaryData &,
+                         BoundaryData &data,
                          float stroke_perturb_direction,
                          float stroke_radius) {
     // Parametric form of a ellipse (t in [0, 1)):
@@ -73,6 +74,7 @@ Vector2f sample_boundary(const Ellipse &ellipse,
             // normal should point towards the perturb direction
             normal = -normal;
         }
+        data.is_stroke = true;
     }
     return ret;
 }
@@ -310,7 +312,7 @@ DEVICE
 Vector2f sample_boundary(const Rect &rect,
                          float t, Vector2f &normal,
                          float &pdf,
-                         BoundaryData &,
+                         BoundaryData &data,
                          float stroke_perturb_direction,
                          float stroke_radius) {
     // Roll a dice to decide whether to sample width or height
@@ -332,6 +334,7 @@ Vector2f sample_boundary(const Rect &rect,
                     // normal should point towards the perturb direction
                     normal = -normal;
                 }
+                data.is_stroke = true;
             }
             return ret;
         } else {
@@ -345,6 +348,7 @@ Vector2f sample_boundary(const Rect &rect,
                     // normal should point towards the perturb direction
                     normal = -normal;
                 }
+                data.is_stroke = true;
             }
             return ret;
         }
@@ -364,6 +368,7 @@ Vector2f sample_boundary(const Rect &rect,
                     // normal should point towards the perturb direction
                     normal = -normal;
                 }
+                data.is_stroke = true;
             }
             return ret;
         } else {
@@ -377,6 +382,7 @@ Vector2f sample_boundary(const Rect &rect,
                     // normal should point towards the perturb direction
                     normal = -normal;
                 }
+                data.is_stroke = true;
             }
             return ret;
         }
