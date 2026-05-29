@@ -1,3 +1,8 @@
+# single_square.py
+# Based on single_rect.py with the following modification:
+# Instead of optimizing p_max freely (which allows any rectangle),
+# we use a single size parameter so that width and height are equal
+
 import pydiffvg
 import torch
 import skimage
