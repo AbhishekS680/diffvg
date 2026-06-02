@@ -1,7 +1,9 @@
 # single_square.py
-# Based on single_rect.py with the following modification:
-# Instead of optimizing p_max freely (which allows any rectangle),
-# we use a single size parameter so that width and height are equal
+# Based on single_rect.py with the following modifications:
+# Instead of using pydiffvg.Rect, we use pydiffvg.Polygon with 4 corners
+# derived from a center (cx, cy) and a single size parameter to enforce squareness
+
+# required_grad boolean tells PyTorch to track a variable for gradient computation
 
 import pydiffvg
 import torch
@@ -13,15 +15,27 @@ pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 canvas_width, canvas_height = 256 ,256
 
-# The target square
-# p_min is the top-left corner
-# p_max is the bottom-right corner
-rect = pydiffvg.Rect(p_min = torch.tensor([40.0, 40.0]),
-                     p_max = torch.tensor([160.0, 160.0]))
-shapes = [rect]
-rect_group = pydiffvg.ShapeGroup(shape_ids = torch.tensor([0]),
+# Attributes of the square
+cx = torch.tensor(100.0)
+cy = torch.tensor(100.0)
+size = torch.tensor(120.0)
+half = size / 2.0
+
+# Creates a square
+points = torch.stack([
+    torch.stack([cx - half, cy - half]),
+    torch.stack([cx + half, cy - half]),
+    torch.stack([cx + half, cy + half]),
+    torch.stack([cx - half, cy + half]),
+])
+
+square = pydiffvg.Polygon(points = points, is_closed = True)
+
+shapes = [square]
+
+square_group = pydiffvg.ShapeGroup(shape_ids = torch.tensor([0]),
                                  fill_color = torch.tensor([0.3, 0.6, 0.3, 1.0]))
-shape_groups = [rect_group]
+shape_groups = [square_group]
 scene_args = pydiffvg.RenderFunction.serialize_scene(\
     canvas_width, canvas_height, shapes, shape_groups)
 
@@ -37,14 +51,22 @@ img = render(256, # width
 pydiffvg.imwrite(img.cpu(), 'results/single_square/target.png', gamma=2.2)
 target = img.clone()
 
-# Move the rect to produce initial guess
-# normalize p_min & p_max for easier learning rate
-p_min_n = torch.tensor([80.0 / 256.0, 20.0 / 256.0], requires_grad=True)
-p_max_n = torch.tensor(100.0 / 256.0, requires_grad=True) # Initial size is 100 px
+# Move the square to produce initial guess
+# normalize cx, cy, size to [0, 1] range for easier learning rate
+cx = torch.tensor(130.0 / 256.0, requires_grad=True)
+cy = torch.tensor(130.0 / 256.0, requires_grad=True)
+size = torch.tensor(60.0 / 256.0, requires_grad=True)
 color = torch.tensor([0.3, 0.2, 0.5, 1.0], requires_grad=True)
-rect.p_min = p_min_n * 256
-rect.p_max = p_max_n * 256 + rect.p_min # Ensures width = height
-rect_group.fill_color = color
+cx_px = cx * 256
+cy_px = cy * 256
+half = (size * 256) / 2.0
+square.points = torch.stack([
+    torch.stack([cx_px - half, cy_px - half]),
+    torch.stack([cx_px + half, cy_px - half]),
+    torch.stack([cx_px + half, cy_px + half]),
+    torch.stack([cx_px - half, cy_px + half]),
+])
+square_group.fill_color = color
 scene_args = pydiffvg.RenderFunction.serialize_scene(\
     canvas_width, canvas_height, shapes, shape_groups)
 img = render(256, # width
@@ -56,16 +78,23 @@ img = render(256, # width
              *scene_args)
 pydiffvg.imwrite(img.cpu(), 'results/single_square/init.png', gamma=2.2)
 
-# Optimize for radius & center
-optimizer = torch.optim.Adam([p_min_n, p_max_n, color], lr=1e-2)
+# Optimize for center position and size
+optimizer = torch.optim.Adam([cx, cy, size, color], lr=1e-2)
 # Run 100 Adam iterations.
 for t in range(100):
     print('iteration:', t)
     optimizer.zero_grad()
     # Forward pass: render the image.
-    rect.p_min = p_min_n * 256
-    rect.p_max = p_max_n * 256 + rect.p_min
-    rect_group.fill_color = color
+    cx_px = cx * 256
+    cy_px = cy * 256
+    half = (size * 256) / 2.0
+    square.points = torch.stack([
+        torch.stack([cx_px - half, cy_px - half]),
+        torch.stack([cx_px + half, cy_px - half]),
+        torch.stack([cx_px + half, cy_px + half]),
+        torch.stack([cx_px - half, cy_px + half]),
+    ])
+    square_group.fill_color = color
     scene_args = pydiffvg.RenderFunction.serialize_scene(\
         canvas_width, canvas_height, shapes, shape_groups)
     img = render(256,   # width
@@ -84,16 +113,18 @@ for t in range(100):
     # Backpropagate the gradients.
     loss.backward()
     # Print the gradients
-    print('p_min.grad:', p_min_n.grad)
-    print('p_max.grad:', p_max_n.grad)
+    print('cx.grad:', cx.grad)
+    print('cy.grad:', cy.grad)
+    print('size.grad:', size.grad)
     print('color.grad:', color.grad)
 
     # Take a gradient descent step.
     optimizer.step()
     # Print the current params.
-    print('p_min:', rect.p_min)
-    print('p_max:', rect.p_max)
-    print('color:', rect_group.fill_color)
+    print('cx:', cx)
+    print('cy:', cy)
+    print('size:', size)
+    print('color:', square_group.fill_color)
 
 # Render the final result.
 scene_args = pydiffvg.RenderFunction.serialize_scene(\
