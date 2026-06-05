@@ -50,6 +50,11 @@ class RenderFunction(torch.autograd.Function):
                 args.append(diffvg.ShapeType.circle)
                 args.append(shape.radius.cpu())
                 args.append(shape.center.cpu())
+            elif isinstance(shape, pydiffvg.LeCircle):
+                assert(shape.center.is_contiguous())
+                args.append(diffvg.ShapeType.lecircle)
+                args.append(shape.radius.cpu())
+                args.append(shape.center.cpu())
             elif isinstance(shape, pydiffvg.Ellipse):
                 assert(shape.radius.is_contiguous())
                 assert(shape.center.is_contiguous())
@@ -212,6 +217,12 @@ class RenderFunction(torch.autograd.Function):
                 center = args[current_index]
                 current_index += 1
                 shape = diffvg.Circle(radius, diffvg.Vector2f(center[0], center[1]))
+            elif shape_type == diffvg.ShapeType.lecircle:
+                radius = args[current_index]
+                current_index += 1
+                center = args[current_index]
+                current_index += 1
+                shape = diffvg.LeCircle(radius, diffvg.Vector2f(center[0], center[1]))
             elif shape_type == diffvg.ShapeType.ellipse:
                 radius = args[current_index]
                 current_index += 1
@@ -469,6 +480,12 @@ class RenderFunction(torch.autograd.Function):
                 center = args[current_index]
                 current_index += 1
                 shape = diffvg.Circle(radius, diffvg.Vector2f(center[0], center[1]))
+            elif shape_type == diffvg.ShapeType.lecircle:
+                radius = args[current_index]
+                current_index += 1
+                center = args[current_index]
+                current_index += 1
+                shape = diffvg.LeCircle(radius, diffvg.Vector2f(center[0], center[1]))
             elif shape_type == diffvg.ShapeType.ellipse:
                 radius = args[current_index]
                 current_index += 1
@@ -734,6 +751,15 @@ class RenderFunction(torch.autograd.Function):
                 assert(torch.isfinite(radius).all())
                 d_args.append(radius)
                 c = d_circle.center
+                c = torch.tensor((c.x, c.y))
+                assert(torch.isfinite(c).all())
+                d_args.append(c)
+            elif d_shape.type == diffvg.ShapeType.lecircle:
+                d_lecircle = d_shape.as_lecircle()
+                radius = torch.tensor(d_lecircle.radius)
+                assert(torch.isfinite(radius).all())
+                d_args.append(radius)
+                c = d_lecircle.center
                 c = torch.tensor((c.x, c.y))
                 assert(torch.isfinite(c).all())
                 d_args.append(c)
