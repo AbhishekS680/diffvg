@@ -1679,6 +1679,7 @@ PYBIND11_MODULE(diffvg, m) {
 
     py::enum_<ShapeType>(m, "ShapeType")
         .value("circle", ShapeType::Circle)
+        .value("lecircle", ShapeType::LeCircle)
         .value("ellipse", ShapeType::Ellipse)
         .value("path", ShapeType::Path)
         .value("rect", ShapeType::Rect);
@@ -1688,6 +1689,12 @@ PYBIND11_MODULE(diffvg, m) {
         .def("get_ptr", &Circle::get_ptr)
         .def_readonly("radius", &Circle::radius)
         .def_readonly("center", &Circle::center);
+
+    py::class_<LeCircle>(m, "LeCircle")
+        .def(py::init<float, Vector2f>())
+        .def("get_ptr", &LeCircle::get_ptr)
+        .def_readonly("radius", &LeCircle::radius)
+        .def_readonly("center", &LeCircle::center);
 
     py::class_<Ellipse>(m, "Ellipse")
         .def(py::init<Vector2f, Vector2f>())
