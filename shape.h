@@ -10,10 +10,20 @@ enum class ShapeType {
     Circle,
     Ellipse,
     Path,
-    Rect
+    Rect,
+    LeCircle
 };
 
 struct Circle {
+    float radius;
+    Vector2f center;
+
+    ptr<void> get_ptr() {
+        return ptr<void>(this);
+    }
+};
+
+struct LeCircle {
     float radius;
     Vector2f center;
 
@@ -83,6 +93,10 @@ struct Shape {
 
     Circle as_circle() const {
         return *(Circle*)ptr;
+    }
+
+    LeCircle as_lecircle() const {
+        return *(LeCircle*)ptr;
     }
 
     Ellipse as_ellipse() const {
