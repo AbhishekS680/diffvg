@@ -159,7 +159,6 @@ DEVICE void accumulate_boundary_gradient(const Shape &shape,
             atomic_add(&d_p->center[0], normal * contrib);
             atomic_add(&d_p->radius, contrib);
             break;
-        }
         } case ShapeType::Ellipse: {
             Ellipse *d_p = (Ellipse*)d_shape.ptr;
             // velocity for the center is (1, 0) for x and (0, 1) for y
