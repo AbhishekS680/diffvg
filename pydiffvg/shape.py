@@ -9,6 +9,13 @@ class Circle:
         self.stroke_width = stroke_width
         self.id = id
 
+class LeCircle:
+    def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
+        self.radius = radius
+        self.center = center
+        self.stroke_width = stroke_width
+        self.id = id
+
 class Ellipse:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

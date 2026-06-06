@@ -1749,6 +1749,7 @@ PYBIND11_MODULE(diffvg, m) {
     py::class_<Shape>(m, "Shape")
         .def(py::init<ShapeType, ptr<void>, float>())
         .def("as_circle", &Shape::as_circle)
+        .def("as_lecircle", &Shape::as_lecircle)
         .def("as_ellipse", &Shape::as_ellipse)
         .def("as_path", &Shape::as_path)
         .def("as_rect", &Shape::as_rect)
