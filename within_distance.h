@@ -17,6 +17,16 @@ bool within_distance(const Circle &circle, const Vector2f &pt, float r) {
 
 DEVICE
 inline
+bool within_distance(const LeCircle &circle, const Vector2f &pt, float r) {
+    auto dist_to_center = distance(circle.center, pt);
+    if (fabs(dist_to_center - circle.radius) < r) {
+        return true;
+    }
+    return false;
+}
+
+DEVICE
+inline
 bool within_distance(const Path &path, const BVHNode *bvh_nodes, const Vector2f &pt, float r) {
     auto num_segments = path.num_base_points;
     constexpr auto max_bvh_size = 128;
@@ -339,6 +349,8 @@ bool within_distance(const Shape &shape, const BVHNode *bvh_nodes, const Vector2
     switch (shape.type) {
         case ShapeType::Circle:
             return within_distance(*(const Circle *)shape.ptr, pt, r);
+        case ShapeType::LeCircle:
+            return within_distance(*(const LeCircle *)shape.ptr, pt, r);
         case ShapeType::Ellipse:
             // https://www.geometrictools.com/Documentation/DistancePointEllipseEllipsoid.pdf
             assert(false);
