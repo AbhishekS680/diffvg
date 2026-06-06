@@ -19,6 +19,17 @@ int compute_winding_number(const Circle &circle, const Vector2f &pt) {
 }
 
 DEVICE
+int compute_winding_number(const LeCircle &circle, const Vector2f &pt) {
+    const auto &c = circle.center;
+    auto r = circle.radius;
+    if (distance_squared(c, pt) < r * r) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+DEVICE
 int compute_winding_number(const Ellipse &ellipse, const Vector2f &pt) {
     const auto &c = ellipse.center;
     const auto &r = ellipse.radius;
@@ -190,6 +201,8 @@ int compute_winding_number(const Shape &shape, const BVHNode *bvh_nodes, const V
     switch (shape.type) {
         case ShapeType::Circle:
             return compute_winding_number(*(const Circle *)shape.ptr, pt);
+        case ShapeType::LeCircle:
+            return compute_winding_number(*(const LeCircle *)shape.ptr, pt);
         case ShapeType::Ellipse:
             return compute_winding_number(*(const Ellipse *)shape.ptr, pt);
         case ShapeType::Path:
