@@ -54,6 +54,14 @@ void copy_and_init_shapes(Scene &scene,
                 d_p->radius = 0;
                 d_p->center = Vector2f{0, 0};
                 break;
+            } case ShapeType::LeCircle: {
+                LeCircle *p = (LeCircle *)scene.shapes[shape_id].ptr;
+                const LeCircle *p_ = (const LeCircle*)(shape_list[shape_id]->ptr);
+                *p = *p_;
+                LeCircle *d_p = (LeCircle *)scene.d_shapes[shape_id].ptr;
+                d_p->radius = 0;
+                d_p->center = Vector2f{0, 0};
+                break;
             } case ShapeType::Ellipse: {
                 Ellipse *p = (Ellipse *)scene.shapes[shape_id].ptr;
                 const Ellipse *p_ = (const Ellipse*)(shape_list[shape_id]->ptr);
@@ -119,6 +127,10 @@ compute_shape_length(const std::vector<const Shape *> &shape_list) {
         switch (shape_list[shape_id]->type) {
             case ShapeType::Circle: {
                 const Circle *p_ = (const Circle*)(shape_list[shape_id]->ptr);
+                shape_length += float(2.f * M_PI) * p_->radius;
+                break;
+            } case ShapeType::LeCircle: {
+                const LeCircle *p_ = (const LeCircle*)(shape_list[shape_id]->ptr);
                 shape_length += float(2.f * M_PI) * p_->radius;
                 break;
             } case ShapeType::Ellipse: {
@@ -503,6 +515,11 @@ void compute_bounding_boxes(Scene &scene,
                 scene.shapes_bbox[shape_id] = AABB{p->center - p->radius,
                                                    p->center + p->radius};
                 break;
+            } case ShapeType::LeCircle: {
+                const LeCircle *p = (const LeCircle*)(shape_list[shape_id]->ptr);
+                scene.shapes_bbox[shape_id] = AABB{p->center - p->radius,
+                                                p->center + p->radius};
+                break;
             } case ShapeType::Ellipse: {
                 const Ellipse *p = (const Ellipse*)(shape_list[shape_id]->ptr);
                 scene.shapes_bbox[shape_id] = AABB{p->center - p->radius,
@@ -744,6 +761,12 @@ size_t allocate_buffers(Scene &scene,
                 buffer_size += align(sizeof(Circle)); // scene.shapes[shape_id].ptr
                 if (alloc_mode) scene.d_shapes[shape_id].ptr = (Circle*)&scene.buffer[buffer_size];
                 buffer_size += align(sizeof(Circle)); // scene.d_shapes[shape_id].ptr
+                break;
+            } case ShapeType::LeCircle: {
+                if (alloc_mode) scene.shapes[shape_id].ptr = (LeCircle*)&scene.buffer[buffer_size];
+                buffer_size += align(sizeof(LeCircle));
+                if (alloc_mode) scene.d_shapes[shape_id].ptr = (LeCircle*)&scene.buffer[buffer_size];
+                buffer_size += align(sizeof(LeCircle));
                 break;
             } case ShapeType::Ellipse: {
                 if (alloc_mode) scene.shapes[shape_id].ptr = (Ellipse*)&scene.buffer[buffer_size];
