@@ -46,6 +46,30 @@ Vector2f sample_boundary(const Circle &circle,
 }
 
 DEVICE
+Vector2f sample_boundary(const LeCircle &circle,
+                         float t,
+                         Vector2f &normal,
+                         float &pdf,
+                         BoundaryData &,
+                         float stroke_perturb_direction,
+                         float stroke_radius) {
+    auto offset = Vector2f{
+        circle.radius * cos(2 * float(M_PI) * t),
+        circle.radius * sin(2 * float(M_PI) * t)
+    };
+    normal = normalize(offset);
+    pdf /= (2 * float(M_PI) * circle.radius);
+    auto ret = circle.center + offset;
+    if (stroke_perturb_direction != 0.f) {
+        ret += stroke_perturb_direction * stroke_radius * normal;
+        if (stroke_perturb_direction < 0) {
+            normal = -normal;
+        }
+    }
+    return ret;
+}
+
+DEVICE
 Vector2f sample_boundary(const Ellipse &ellipse,
                          float t,
                          Vector2f &normal,
@@ -428,6 +452,9 @@ Vector2f sample_boundary(const SceneData &scene,
         case ShapeType::Circle:
             return sample_boundary(
                 *(const Circle *)shape.ptr, t, normal, pdf, data, stroke_perturb_direction, shape.stroke_width);
+        case ShapeType::LeCircle:
+            return sample_boundary(
+                *(const LeCircle *)shape.ptr, t, normal, pdf, data, stroke_perturb_direction, shape.stroke_width);
         case ShapeType::Ellipse:
             return sample_boundary(
                 *(const Ellipse *)shape.ptr, t, normal, pdf, data, stroke_perturb_direction, shape.stroke_width);
