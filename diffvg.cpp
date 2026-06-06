@@ -154,7 +154,7 @@ DEVICE void accumulate_boundary_gradient(const Shape &shape,
             // velocity for the radius is the same as the normal
             atomic_add(&d_p->radius, contrib);
             break;
-        case ShapeType::LeCircle: {
+        } case ShapeType::LeCircle: {
             LeCircle *d_p = (LeCircle*)d_shape.ptr;
             atomic_add(&d_p->center[0], normal * contrib);
             atomic_add(&d_p->radius, contrib);
