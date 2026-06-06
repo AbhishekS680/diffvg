@@ -25,6 +25,14 @@ bool closest_point(const Circle &circle, const Vector2f &pt,
 
 DEVICE
 inline
+bool closest_point(const LeCircle &circle, const Vector2f &pt,
+                   Vector2f *result) {
+    *result = circle.center + circle.radius * normalize(pt - circle.center);
+    return false;
+}
+
+DEVICE
+inline
 bool closest_point(const Path &path, const BVHNode *bvh_nodes, const Vector2f &pt, float max_radius,
                    ClosestPointPathInfo *path_info,
                    Vector2f *result) {
@@ -359,6 +367,8 @@ bool closest_point(const Shape &shape, const BVHNode *bvh_nodes, const Vector2f 
     switch (shape.type) {
         case ShapeType::Circle:
             return closest_point(*(const Circle *)shape.ptr, pt, result);
+        case ShapeType::LeCircle:
+            return closest_point(*(const LeCircle *)shape.ptr, pt, result);
         case ShapeType::Ellipse:
             // https://www.geometrictools.com/Documentation/DistancePointEllipseEllipsoid.pdf
             assert(false);
@@ -447,6 +457,19 @@ void d_closest_point(const Circle &circle,
                      Circle &d_circle,
                      Vector2f &d_pt) {
     // return circle.center + circle.radius * normalize(pt - circle.center);
+    auto d_center = d_closest_pt *
+        (1 + d_normalize(pt - circle.center, circle.radius * d_closest_pt));
+    atomic_add(&d_circle.center.x, d_center);
+    atomic_add(&d_circle.radius, dot(d_closest_pt, normalize(pt - circle.center)));
+}
+
+DEVICE
+inline
+void d_closest_point(const LeCircle &circle,
+                     const Vector2f &pt,
+                     const Vector2f &d_closest_pt,
+                     LeCircle &d_circle,
+                     Vector2f &d_pt) {
     auto d_center = d_closest_pt *
         (1 + d_normalize(pt - circle.center, circle.radius * d_closest_pt));
     atomic_add(&d_circle.center.x, d_center);
@@ -872,6 +895,13 @@ void d_closest_point(const Shape &shape,
                             pt,
                             d_closest_pt,
                             *(Circle *)d_shape.ptr,
+                            d_pt);
+            break;
+        case ShapeType::LeCircle:
+            d_closest_point(*(const LeCircle *)shape.ptr,
+                            pt,
+                            d_closest_pt,
+                            *(LeCircle *)d_shape.ptr,
                             d_pt);
             break;
         case ShapeType::Ellipse:
