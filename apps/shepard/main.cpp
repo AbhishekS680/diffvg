@@ -2,7 +2,6 @@
 #include "stb_image_write.h"
 #include "shepard.h"
 #include <vector>
-#include <cstdlib>
 
 int main() {
     int width = 512;
