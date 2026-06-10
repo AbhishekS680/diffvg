@@ -39,7 +39,7 @@ Image render (const std::vector<Point>& points, int width, int height, float q) 
 
             int index = (py * width + px) * 3; // Find the index of the pixel in the array using the formula
 
-            img.pixels[index + 0] = (unsigned char)(r * 255.0);
+            img.pixels[index + 0] = (unsigned char)(r * 255.0); // For PNG conversion
             img.pixels[index + 1] = (unsigned char)(g * 255.0);
             img.pixels[index + 2] = (unsigned char)(b * 255.0);
         }
