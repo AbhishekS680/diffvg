@@ -1,7 +1,21 @@
 import pydiffvg
 import torch
-import skimage
-import numpy as np
+
+N = 100
+q = 3.0
+iters = 100
+
+def shepard_render(positions, colors, width, height, q, eps=1e-8):
+    ys = torch.arange(height, dtype=torch.float32)
+    xs = torch.arange(width,  dtype=torch.float32)
+    gy, gx = torch.meshgrid(ys, xs, indexing='ij')
+    coords = torch.stack([gx, gy], dim=-1)                      # (H,W,2)
+    diff = coords[:, :, None, :] - positions[None, None, :, :]  # (H,W,N,2)
+    dist = torch.sqrt((diff ** 2).sum(dim=-1))                  # (H,W,N)
+    weight = 1.0 / (dist ** q + eps)                            # (H,W,N)
+    numer = (weight[..., None] * colors).sum(dim=2)             # (H,W,3)
+    denom = weight.sum(dim=2, keepdim=True)                     # (H,W,1)
+    return numer / denom                                        # (H,W,3)
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
@@ -18,90 +32,48 @@ scene_args = pydiffvg.RenderFunction.serialize_scene(\
     canvas_width, canvas_height, shapes, shape_groups)
 
 render = pydiffvg.RenderFunction.apply
-img = render(256, # width
-             256, # height
+img = render(canvas_width, # width
+             canvas_height, # height
              2,   # num_samples_x
              2,   # num_samples_y
              0,   # seed
              None,
              *scene_args)
 # The output image is in linear RGB space. Do Gamma correction before saving the image.
-pydiffvg.imwrite(img.cpu(), 'results/single_circle/target.png', gamma=2.2)
-target = img.clone()
+pydiffvg.imwrite(img.cpu(), 'results/single_shepard/target.png', gamma=2.2)
+target = img.clone()[..., :3]   # drop alpha, match shepard's (H,W,3)
+print('diffvg img shape:', img.shape)
 
-# Move the circle to produce initial guess
-# normalize radius & center for easier learning rate
-radius_n = torch.tensor(20.0 / 256.0, requires_grad=True)
-center_n = torch.tensor([108.0 / 256.0, 138.0 / 256.0], requires_grad=True)
-color = torch.tensor([0.3, 0.2, 0.8, 1.0], requires_grad=True)
-circle.radius = radius_n * 256
-circle.center = center_n * 256
-circle_group.fill_color = color
-scene_args = pydiffvg.RenderFunction.serialize_scene(\
-    canvas_width, canvas_height, shapes, shape_groups)
-img = render(256, # width
-             256, # height
-             2,   # num_samples_x
-             2,   # num_samples_y
-             1,   # seed
-             None,
-             *scene_args)
-pydiffvg.imwrite(img.cpu(), 'results/single_circle/init.png', gamma=2.2)
+# Initialize N control points and colors randomly.
+# Positions are kept in normalized [0,1] coords and scaled to pixel space
+# each iteration (helps Adam use a single learning rate for both tensors).
+positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)   # normalized [0,1]
+colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
+optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 
-# Optimize for radius & center
-optimizer = torch.optim.Adam([radius_n, center_n, color], lr=1e-2)
+
 # Run 100 Adam iterations.
-for t in range(100):
-    print('iteration:', t)
+for t in range(iters):
     optimizer.zero_grad()
-    # Forward pass: render the image.
-    circle.radius = radius_n * 256
-    circle.center = center_n * 256
-    circle_group.fill_color = color
-    scene_args = pydiffvg.RenderFunction.serialize_scene(\
-        canvas_width, canvas_height, shapes, shape_groups)
-    img = render(256,   # width
-                 256,   # height
-                 2,     # num_samples_x
-                 2,     # num_samples_y
-                 t+1,   # seed
-                 None,
-                 *scene_args)
-    # Save the intermediate render.
-    pydiffvg.imwrite(img.cpu(), 'results/single_circle/iter_{}.png'.format(t), gamma=2.2)
-    # Compute the loss function. Here it is L2.
+    positions = positions_n * canvas_width
+    img = shepard_render(positions, colors, canvas_width, canvas_height, q)
     loss = (img - target).pow(2).sum()
-    print('loss:', loss.item())
-
-    # Backpropagate the gradients.
     loss.backward()
-    # Print the gradients
-    print('radius.grad:', radius_n.grad)
-    print('center.grad:', center_n.grad)
-    print('color.grad:', color.grad)
-
-    # Take a gradient descent step.
+    
+    print('iter', t, 'loss', loss.item())
+    print('positions.grad norm:', positions_n.grad.norm().item())
     optimizer.step()
-    # Print the current params.
-    print('radius:', circle.radius)
-    print('center:', circle.center)
-    print('color:', circle_group.fill_color)
+
+    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/single_shepard/iter_{}.png'.format(t), gamma=2.2)
+
+print(f'final loss: {loss.item():.4f}')
 
 # Render the final result.
-scene_args = pydiffvg.RenderFunction.serialize_scene(\
-    canvas_width, canvas_height, shapes, shape_groups)
-img = render(256,   # width
-             256,   # height
-             2,     # num_samples_x
-             2,     # num_samples_y
-             102,    # seed
-             None,
-             *scene_args)
-# Save the images and differences.
-pydiffvg.imwrite(img.cpu(), 'results/single_circle/final.png')
+final = shepard_render(positions_n * canvas_width, colors, canvas_width, canvas_height, q)
+pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/single_shepard/final.png', gamma=2.2)
 
 # Convert the intermediate renderings to a video.
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
-    "results/single_circle/iter_%d.png", "-vb", "20M",
-    "results/single_circle/out.mp4"])
+    "results/single_shepard/iter_%d.png", "-vb", "20M",
+    "results/single_shepard/out.mp4"])
