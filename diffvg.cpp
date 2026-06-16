@@ -1648,6 +1648,16 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+void render_shepard(const ShepardField &field,
+                    ptr<float> final_render_image,
+                    ptr<float> render_image,
+                    ptr<float> positions,
+                    ptr<float> colours,
+                    int width,
+                    int height) {
+    e
+                    }
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
