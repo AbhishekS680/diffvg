@@ -866,3 +866,52 @@ class RenderFunction(torch.autograd.Function):
         d_args.append(torch.tensor(scene.get_d_filter_radius()))
 
         return tuple(d_args)
+
+class ShepardRenderFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, positions, colours, q, width, height):
+        positions_cpu = positions.contiguous().cpu()
+        colours_cpu   = colours.contiguous().cpu()
+        render_image  = torch.zeros(height, width, 3)
+
+        field = diffvg.ShepardField(
+            diffvg.float_ptr(positions_cpu.data_ptr()),
+            diffvg.float_ptr(colours_cpu.data_ptr()),
+            positions_cpu.shape[0],
+            q)
+
+        diffvg.render_shepard(field,
+            diffvg.float_ptr(render_image.data_ptr()),
+            diffvg.float_ptr(0),  # d_render_image — not needed on forward
+            diffvg.float_ptr(0),  # d_positions
+            diffvg.float_ptr(0),  # d_colours
+            width, height)
+
+        ctx.save_for_backward(positions_cpu, colours_cpu)
+        ctx.q      = q
+        ctx.width  = width
+        ctx.height = height
+        return render_image
+
+    @staticmethod
+    def backward(ctx, grad_img):
+        positions_cpu, colours_cpu = ctx.saved_tensors
+        grad_img_cpu = grad_img.contiguous().cpu()
+
+        d_positions = torch.zeros_like(positions_cpu)
+        d_colours   = torch.zeros_like(colours_cpu)
+
+        field = diffvg.ShepardField(
+            diffvg.float_ptr(positions_cpu.data_ptr()),
+            diffvg.float_ptr(colours_cpu.data_ptr()),
+            positions_cpu.shape[0],
+            ctx.q)
+
+        diffvg.render_shepard(field,
+            diffvg.float_ptr(0),  # render_image — not needed on backward
+            diffvg.float_ptr(grad_img_cpu.data_ptr()),
+            diffvg.float_ptr(d_positions.data_ptr()),
+            diffvg.float_ptr(d_colours.data_ptr()),
+            ctx.width, ctx.height)
+
+        return d_positions, d_colours, None, None, None

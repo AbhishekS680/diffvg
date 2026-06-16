@@ -2,6 +2,11 @@ import torch
 import svgpathtools
 import math
 
+class ShepardField:
+    def __init__(self, positions, colours, q = 3.0):
+        self.positions = positions
+        self.colours = colours
+        self.q = q
 class Circle:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

@@ -1648,15 +1648,102 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+// Shepard field renderer
+// Forward pass: for each pixel, compute IDW-weighted color sum across N control points
+// Backward pass: accumulate gradients w.r.t. positions and colours
+
 void render_shepard(const ShepardField &field,
-                    ptr<float> final_render_image,
                     ptr<float> render_image,
-                    ptr<float> positions,
-                    ptr<float> colours,
+                    ptr<float> d_render_image,
+                    ptr<float> d_positions,
+                    ptr<float> d_colours,
                     int width,
                     int height) {
-    e
-                    }
+        const int N = field.num_points;
+        const float q = field.q;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float total_weight = 0.0;
+            float r = 0.0, g = 0.0, b = 0.0;
+            bool hit = false;
+
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float dist_x = x - px;
+                float dist_y = y - py;
+                float dist = sqrt(dist_x*dist_x + dist_y*dist_y); // Using the pythagorean theorem to find the distance b/w the pixel and the point
+
+                if (dist < 1e-6) { // Cannot be zero
+                    r = field.colours[i * 3 + 0];
+                    g = field.colours[i * 3 + 1];
+                    b = field.colours[i * 3 + 2];
+                    total_weight = -1.0;
+                    hit = true; // gradient is undefined when distance between points is 0
+                    break;
+                }
+
+                float weight = 1.0 / pow(dist, q);
+                r += weight * field.colours[i * 3 + 0];
+                g += weight * field.colours[i * 3 + 1];
+                b += weight * field.colours[i * 3 + 2];
+                total_weight += weight;
+            }
+
+                // Normalize the values
+                if (total_weight > 0.0) {
+                    r /= total_weight;
+                    g /= total_weight;
+                    b /= total_weight;
+                }
+
+            int index = (y * width + x) * 3; // Find the index of the pixel in the array using the formula
+
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = r;
+                render_image.get()[index + 1] = g;
+                render_image.get()[index + 2] = b;
+            }
+            
+            // Backward pass
+            if (d_render_image.get() != nullptr && !hit && total_weight > 0.0) {
+                float grad_r = d_render_image.get()[index + 0];
+                float grad_g = d_render_image.get()[index + 1];
+                float grad_b = d_render_image.get()[index + 2];
+
+                for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float dx = x - px;
+                float dy = y - py;
+                float dist = sqrt(dx*dx + dy*dy);
+                if (dist < 1e-6f) continue;
+
+                float dist_q = pow(dist, q);
+                float w = 1.f / dist_q;
+
+                if (d_colours.get() != nullptr) {
+                    d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
+                    d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
+                    d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
+                }
+
+                if (d_positions.get() != nullptr) {
+                    float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
+                                    grad_g * (field.colours[i*3+1] - g) +
+                                    grad_b * (field.colours[i*3+2] - b)) / total_weight;
+                    float dw_ddist = -q * pow(dist, q - 1.f) / (dist_q * dist_q);
+                    float dL_ddist = dL_dw * dw_ddist;
+                    d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist);
+                    d_positions.get()[i * 2 + 1] += dL_ddist * (-dy / dist);
+                    
+                }
+                }
+            }
+        }
+    }
+}
 
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
@@ -1797,6 +1884,14 @@ PYBIND11_MODULE(diffvg, m) {
         .def("get_d_filter_radius", &Scene::get_d_filter_radius)
         .def_readonly("num_shapes", &Scene::num_shapes)
         .def_readonly("num_shape_groups", &Scene::num_shape_groups);
+
+    py::class_<ShepardField>(m, "ShepardField")
+        .def(py::init<ptr<float>, ptr<float>, int, float>())
+        .def("get_ptr", &ShepardField::get_ptr)
+        .def_readonly("num_points", &ShepardField::num_points)
+        .def_readonly("q", &ShepardField::q);
+
+    m.def("render_shepard", &render_shepard, "");
 
     m.def("render", &render, "");
 }

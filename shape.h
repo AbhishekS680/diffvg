@@ -13,6 +13,27 @@ enum class ShapeType {
     Rect
 };
 
+// ShapeType not needed for Shepard
+struct ShepardField {
+    ShepardField(ptr<float> positions,
+                 ptr<float> colours,
+                 int num_points,
+                 float q) :
+        positions(positions.get()),
+        colours(colours.get()),
+        num_points(num_points),
+        q(q) {}
+
+    float *positions;
+    float *colours;
+    int num_points;
+    float q;
+
+    ptr<void> get_ptr() {
+        return ptr<void>(this);
+    }
+};
+
 struct Circle {
     float radius;
     Vector2f center;
