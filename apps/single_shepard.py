@@ -1,24 +1,12 @@
 # single_shepard.py
-# Implemented using PyTorch, not diffvg
+# Implemented using diffvg's ShepardField C++ renderer
 
 import pydiffvg
 import torch
 
-N = 100 # Number of control points
+N = 300 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 100
-
-def shepard_render(positions, colors, width, height, q, eps=1e-8):
-    ys = torch.arange(height, dtype=torch.float32)
-    xs = torch.arange(width,  dtype=torch.float32)
-    gy, gx = torch.meshgrid(ys, xs, indexing='ij')
-    coords = torch.stack([gx, gy], dim=-1)                      # (H,W,2)
-    diff = coords[:, :, None, :] - positions[None, None, :, :]  # (H,W,N,2)
-    dist = torch.sqrt((diff ** 2).sum(dim=-1))                  # (H,W,N)
-    weight = 1.0 / (dist ** q + eps)                            # (H,W,N)
-    numer = (weight[..., None] * colors).sum(dim=2)             # (H,W,3)
-    denom = weight.sum(dim=2, keepdim=True)                     # (H,W,1)
-    return numer / denom                                        # (H,W,3)
+iters = 300
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
@@ -59,7 +47,7 @@ optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 for t in range(iters):
     optimizer.zero_grad()
     positions = positions_n * canvas_width
-    img = shepard_render(positions, colors, canvas_width, canvas_height, q)
+    img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss.backward()
     
@@ -72,7 +60,7 @@ for t in range(iters):
 print(f'final loss: {loss.item():.4f}')
 
 # Render the final result.
-final = shepard_render(positions_n * canvas_width, colors, canvas_width, canvas_height, q)
+final = pydiffvg.ShepardRenderFunction.apply(positions_n * canvas_width, colors, q, canvas_width, canvas_height)
 pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/single_shepard/final.png', gamma=2.2)
 
 # Convert the intermediate renderings to a video.
