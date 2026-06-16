@@ -1,8 +1,11 @@
+# single_shepard.py
+# Implemented using PyTorch, not diffvg
+
 import pydiffvg
 import torch
 
-N = 100
-q = 3.0
+N = 100 # Number of control points
+q = 3.0 # Controls how sharply the falloff happens for each control point
 iters = 100
 
 def shepard_render(positions, colors, width, height, q, eps=1e-8):
