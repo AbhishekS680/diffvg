@@ -1,4 +1,4 @@
-# single_shepard.py
+# shepard_rendering.py
 # Implemented using diffvg's ShepardField C++ renderer
 
 import pydiffvg
@@ -33,7 +33,7 @@ img = render(canvas_width, # width
              None,
              *scene_args)
 # The output image is in linear RGB space. Do Gamma correction before saving the image.
-pydiffvg.imwrite(img.cpu(), 'results/single_shepard/target.png', gamma=2.2)
+pydiffvg.imwrite(img.cpu(), 'results/shepard_rendering/target.png', gamma=2.2)
 target = img.clone()[..., :3]   # drop alpha, match shepard's (H,W,3)
 print('diffvg img shape:', img.shape)
 
@@ -49,22 +49,22 @@ for t in range(iters):
     positions = positions_n * canvas_width
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height) # forward → C++ render_shepard
     loss = (img - target).pow(2).sum() # how wrong is the current render
-    loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad
+    loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
     
     print('iter', t, 'loss', loss.item())
     print('positions.grad norm:', positions_n.grad.norm().item())
     optimizer.step() # Adam reads .grad → moves positions_n and colors
 
-    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/single_shepard/iter_{}.png'.format(t), gamma=2.2)
+    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/shepard_rendering/iter_{}.png'.format(t), gamma=2.2)
 
 print(f'final loss: {loss.item():.4f}')
 
 # Render the final result.
 final = pydiffvg.ShepardRenderFunction.apply(positions_n * canvas_width, colors, q, canvas_width, canvas_height)
-pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/single_shepard/final.png', gamma=2.2)
+pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/shepard_rendering/final.png', gamma=2.2)
 
 # Convert the intermediate renderings to a video.
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
-    "results/single_shepard/iter_%d.png", "-vb", "20M",
-    "results/single_shepard/out.mp4"])
+    "results/shepard_rendering/iter_%d.png", "-vb", "20M",
+    "results/shepard_rendering/out.mp4"])
