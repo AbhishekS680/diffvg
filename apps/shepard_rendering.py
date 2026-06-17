@@ -4,38 +4,20 @@
 import pydiffvg
 import torch
 
-N = 100 # Number of control points
+import skimage.io
+
+N = 30 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 100
+iters = 10
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-canvas_width = 256
-canvas_height = 256
-
-# Replace with image later
-circle = pydiffvg.Circle(radius = torch.tensor(40.0),
-                         center = torch.tensor([128.0, 128.0]))
-shapes = [circle]
-circle_group = pydiffvg.ShapeGroup(shape_ids = torch.tensor([0]),
-    fill_color = torch.tensor([0.3, 0.6, 0.3, 1.0]))
-shape_groups = [circle_group]
-scene_args = pydiffvg.RenderFunction.serialize_scene(\
-    canvas_width, canvas_height, shapes, shape_groups)
-
-render = pydiffvg.RenderFunction.apply
-img = render(canvas_width, # width
-             canvas_height, # height
-             2,   # num_samples_x
-             2,   # num_samples_y
-             0,   # seed
-             None,
-             *scene_args)
-# The output image is in linear RGB space. Do Gamma correction before saving the image.
-pydiffvg.imwrite(img.cpu(), 'results/shepard_rendering/target.png', gamma=2.2)
-target = img.clone()[..., :3]   # drop alpha, match shepard's (H,W,3)
-print('diffvg img shape:', img.shape)
+target = torch.from_numpy(skimage.io.imread('imgs/shepard_ex.png')).to(torch.float32) / 255.0
+target = target[:, :, :3]  # keep RGB only
+canvas_height, canvas_width = target.shape[0], target.shape[1]
+pydiffvg.imwrite(target.cpu(), 'results/shepard_rendering/target.png', gamma=2.2)
+print('target shape:', target.shape)
 
 # Initialize N control points and colors randomly
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
