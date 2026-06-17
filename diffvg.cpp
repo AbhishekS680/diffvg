@@ -1887,6 +1887,8 @@ PYBIND11_MODULE(diffvg, m) {
         .def_readonly("num_shapes", &Scene::num_shapes)
         .def_readonly("num_shape_groups", &Scene::num_shape_groups);
 
+    // Exposes ShepardField and render_shepard to Python
+    // render_pytorch.py uses this
     py::class_<ShepardField>(m, "ShepardField")
         .def(py::init<ptr<float>, ptr<float>, int, float>())
         .def("get_ptr", &ShepardField::get_ptr)
