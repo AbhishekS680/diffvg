@@ -1666,7 +1666,7 @@ void render_shepard(const ShepardField &field,
         for (int x = 0; x < width; x++) {
             float total_weight = 0.0;
             float r = 0.0, g = 0.0, b = 0.0;
-            bool hit = false;
+            bool hit = false; // Becomes true when a pixel lands directly on a control point, no gradient needed
 
             for (int i = 0; i < N; i++) {
                 float px = field.positions[i * 2 + 0];
@@ -1680,7 +1680,7 @@ void render_shepard(const ShepardField &field,
                     g = field.colours[i * 3 + 1];
                     b = field.colours[i * 3 + 2];
                     total_weight = -1.0;
-                    hit = true; // gradient is undefined when distance between points is 0
+                    hit = true;
                     break;
                 }
 
@@ -1706,39 +1706,41 @@ void render_shepard(const ShepardField &field,
                 render_image.get()[index + 2] = b;
             }
             
-            // Backward pass
+            // Backward pass (How wrong is the image and why)
             if (d_render_image.get() != nullptr && !hit && total_weight > 0.0) {
-                float grad_r = d_render_image.get()[index + 0];
+                float grad_r = d_render_image.get()[index + 0]; // Reads the incoming gradient; computed by PyTorch before calling render_shepard backward
                 float grad_g = d_render_image.get()[index + 1];
                 float grad_b = d_render_image.get()[index + 2];
 
                 for (int i = 0; i < N; i++) {
-                float px = field.positions[i * 2 + 0];
-                float py = field.positions[i * 2 + 1];
-                float dx = x - px;
-                float dy = y - py;
-                float dist = sqrt(dx*dx + dy*dy);
-                if (dist < 1e-6f) continue;
+                    // Recomputing the distance to the control point i
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float dx = x - px;
+                    float dy = y - py;
+                    float dist = sqrt(dx*dx + dy*dy);
+                    if (dist < 1e-6f) continue; // Cannot divide by 0
 
-                float dist_q = pow(dist, q);
-                float w = 1.f / dist_q;
+                    // Recomputing weight
+                    float dist_q = pow(dist, q);
+                    float w = 1.0 / dist_q;
 
-                if (d_colours.get() != nullptr) {
-                    d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
-                    d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
-                    d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
-                }
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
+                        d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
+                        d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
+                    }
 
-                if (d_positions.get() != nullptr) {
-                    float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
-                                    grad_g * (field.colours[i*3+1] - g) +
-                                    grad_b * (field.colours[i*3+2] - b)) / total_weight;
-                    float dw_ddist = -q * pow(dist, q - 1.f) / (dist_q * dist_q);
-                    float dL_ddist = dL_dw * dw_ddist;
-                    d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist);
-                    d_positions.get()[i * 2 + 1] += dL_ddist * (-dy / dist);
-                    
-                }
+                    if (d_positions.get() != nullptr) {
+                        float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
+                                        grad_g * (field.colours[i*3+1] - g) +
+                                        grad_b * (field.colours[i*3+2] - b)) / total_weight;
+                        float dw_ddist = -q * pow(dist, q - 1.f) / (dist_q * dist_q);
+                        float dL_ddist = dL_dw * dw_ddist;
+                        d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist);
+                        d_positions.get()[i * 2 + 1] += dL_ddist * (-dy / dist);
+                        
+                    }
                 }
             }
         }
