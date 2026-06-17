@@ -4,15 +4,17 @@
 import pydiffvg
 import torch
 
-N = 300 # Number of control points
+N = 100 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 300
+iters = 100
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 canvas_width = 256
 canvas_height = 256
+
+# Replace with image later
 circle = pydiffvg.Circle(radius = torch.tensor(40.0),
                          center = torch.tensor([128.0, 128.0]))
 shapes = [circle]
@@ -35,25 +37,23 @@ pydiffvg.imwrite(img.cpu(), 'results/single_shepard/target.png', gamma=2.2)
 target = img.clone()[..., :3]   # drop alpha, match shepard's (H,W,3)
 print('diffvg img shape:', img.shape)
 
-# Initialize N control points and colors randomly.
-# Positions are kept in normalized [0,1] coords and scaled to pixel space
-# each iteration (helps Adam use a single learning rate for both tensors).
-positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)   # normalized [0,1]
+# Initialize N control points and colors randomly
+positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 
 
-# Run 100 Adam iterations.
+# Run Adam iterations.
 for t in range(iters):
     optimizer.zero_grad()
     positions = positions_n * canvas_width
-    img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height)
-    loss = (img - target).pow(2).sum()
-    loss.backward()
+    img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height) # forward → C++ render_shepard
+    loss = (img - target).pow(2).sum() # how wrong is the current render
+    loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad
     
     print('iter', t, 'loss', loss.item())
     print('positions.grad norm:', positions_n.grad.norm().item())
-    optimizer.step()
+    optimizer.step() # Adam reads .grad → moves positions_n and colors
 
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/single_shepard/iter_{}.png'.format(t), gamma=2.2)
 
