@@ -1732,12 +1732,15 @@ void render_shepard(const ShepardField &field,
                     }
 
                     if (d_positions.get() != nullptr) {
+                        // Loss change if weight changes
                         float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
                                         grad_g * (field.colours[i*3+1] - g) +
                                         grad_b * (field.colours[i*3+2] - b)) / total_weight;
+                        // Weight change if distance changes
                         float dw_ddist = -q * pow(dist, q - 1.f) / (dist_q * dist_q);
+                        // Loss change if distance changes
                         float dL_ddist = dL_dw * dw_ddist;
-                        d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist);
+                        d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist); // Spltting the result into x and y components
                         d_positions.get()[i * 2 + 1] += dL_ddist * (-dy / dist);
                         
                     }
