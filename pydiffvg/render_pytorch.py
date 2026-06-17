@@ -868,6 +868,7 @@ class RenderFunction(torch.autograd.Function):
         return tuple(d_args)
 
 class ShepardRenderFunction(torch.autograd.Function):
+    # Gives the current positions and colours and renders the image by calling the C++ render_shepard foward loop
     @staticmethod
     def forward(ctx, positions, colours, q, width, height):
         positions_cpu = positions.contiguous().cpu()
@@ -893,6 +894,7 @@ class ShepardRenderFunction(torch.autograd.Function):
         ctx.height = height
         return render_image
 
+    # Is called automatically by PyTorch with loss.backward()
     @staticmethod
     def backward(ctx, grad_img):
         positions_cpu, colours_cpu = ctx.saved_tensors
