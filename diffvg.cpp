@@ -1707,6 +1707,7 @@ void render_shepard(const ShepardField &field,
             }
             
             // Backward pass (How wrong is the image and why)
+            // Reads the image by the forward pass
             if (d_render_image.get() != nullptr && !hit && total_weight > 0.0) {
                 float grad_r = d_render_image.get()[index + 0]; // Reads the incoming gradient; computed by PyTorch before calling render_shepard backward
                 float grad_g = d_render_image.get()[index + 1];
@@ -1725,6 +1726,8 @@ void render_shepard(const ShepardField &field,
                     float dist_q = pow(dist, q);
                     float w = 1.0 / dist_q;
 
+                    // How much the loss changes if a control point's colour changes
+                    // grad: how wrong each RGB was
                     if (d_colours.get() != nullptr) {
                         d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
                         d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
@@ -1892,6 +1895,7 @@ PYBIND11_MODULE(diffvg, m) {
 
     // Exposes ShepardField and render_shepard to Python
     // render_pytorch.py uses this
+    // pybind11
     py::class_<ShepardField>(m, "ShepardField")
         .def(py::init<ptr<float>, ptr<float>, int, float>())
         .def("get_ptr", &ShepardField::get_ptr)

@@ -869,6 +869,7 @@ class RenderFunction(torch.autograd.Function):
 
 class ShepardRenderFunction(torch.autograd.Function):
     # Gives the current positions and colours and renders the image by calling the C++ render_shepard foward loop
+    # Uses raw memory pointers
     @staticmethod
     def forward(ctx, positions, colours, q, width, height):
         positions_cpu = positions.contiguous().cpu()
@@ -883,7 +884,7 @@ class ShepardRenderFunction(torch.autograd.Function):
 
         diffvg.render_shepard(field,
             diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),  # d_render_image — not needed on forward
+            diffvg.float_ptr(0),  # d_render_image, not needed on forward
             diffvg.float_ptr(0),  # d_positions
             diffvg.float_ptr(0),  # d_colours
             width, height)
@@ -910,7 +911,7 @@ class ShepardRenderFunction(torch.autograd.Function):
             ctx.q)
 
         diffvg.render_shepard(field,
-            diffvg.float_ptr(0),  # render_image — not needed on backward
+            diffvg.float_ptr(0),  # render_image, not needed on backward
             diffvg.float_ptr(grad_img_cpu.data_ptr()),
             diffvg.float_ptr(d_positions.data_ptr()),
             diffvg.float_ptr(d_colours.data_ptr()),
