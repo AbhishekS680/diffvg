@@ -6,7 +6,7 @@
 int main() {
     int width = 512;
     int height = 512;
-    float q = 15.0; // How fast a point's influence drops with distance
+    float q = 4.0; // How fast a point's influence drops with distance
 
     // Points (x, y, r, g, b)
     std::vector<Point> points = {
