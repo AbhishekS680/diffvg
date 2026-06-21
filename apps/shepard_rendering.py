@@ -12,12 +12,12 @@ import matplotlib.pyplot as plt
 
 N = 50 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 100
+iters = 500
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/spider_rgb.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread('imgs/shepard_ex.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/shepard_rendering/target.png', gamma=1.0)
@@ -27,6 +27,7 @@ print('target shape:', target.shape)
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
+loss_history = []
 
 
 # Run Adam iterations.
@@ -35,6 +36,7 @@ for t in range(iters):
     positions = positions_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height) # forward → C++ render_shepard
     loss = (img - target).pow(2).sum() # how wrong is the current render
+    loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
     
     print('iter', t, 'loss', loss.item())
@@ -49,6 +51,18 @@ for t in range(iters):
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/shepard_rendering/iter_{}.png'.format(t), gamma=2.2)
 
 print(f'final loss: {loss.item():.4f}')
+
+# --------------------------------------
+# Plot loss convergence over iterations.
+# --------------------------------------
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(loss_history)
+ax.set_xlabel('Iteration')
+ax.set_ylabel('Loss')
+ax.set_title(f'Convergence (N={N}, q={q})')
+plt.savefig('results/shepard_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved loss_curve.png')
 
 # Render the final result.
 final = pydiffvg.ShepardRenderFunction.apply(positions_n * torch.tensor([canvas_width, canvas_height]), colors, q, canvas_width, canvas_height)
