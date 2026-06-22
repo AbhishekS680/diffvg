@@ -12,16 +12,16 @@ import matplotlib.pyplot as plt
 
 N = 50 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 500
+iters = 100
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/shepard_ex.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread('imgs/spider_rgb.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/shepard_rendering/target.png', gamma=1.0)
-print('target shape:', target.shape)
+print('target shape:', target.shape) # used to confirm if image loaded has expected (H, W, 3) shape
 
 # Initialize N control points and colors randomly
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
@@ -87,6 +87,46 @@ ax.axis('off') # Hides the plot's axis lines, ticks, and labels
 plt.savefig('results/shepard_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
 plt.close(fig) # Releases the figure from memory
 print('saved final_labeled.png')
+
+# -------------------------------------------------------------------
+# Per-pixel error heatmap
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 6))
+
+target_np = target.cpu().numpy()
+final_np = final.detach().clamp(0, 1).cpu().numpy()
+
+# Per-pixel error: mean squared difference across RGB channels
+error_map = ((target_np - final_np) ** 2).mean(axis=2)
+
+im = ax.imshow(error_map, cmap='inferno')
+ax.axis('off')
+fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+plt.savefig('results/shepard_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved error_heatmap.png')
+
+# -------------------------------------------------------------------
+# Comparison: target | rendered | error heatmap
+# -------------------------------------------------------------------
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+axes[0].imshow(target_np)
+axes[0].set_title('Target')
+axes[0].axis('off')
+
+axes[1].imshow(final_np ** (1/2.2))
+axes[1].set_title('Rendered')
+axes[1].axis('off')
+
+im = axes[2].imshow(error_map, cmap='inferno')
+axes[2].set_title('Error heatmap')
+axes[2].axis('off')
+fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
+
+plt.savefig('results/shepard_rendering/all_comparison.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved all_comparison.png')
 
 # Convert the intermediate renderings to a video.
 from subprocess import call
