@@ -48,7 +48,7 @@ for t in range(iters):
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
 
-    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/shepard_rendering/iter_{}.png'.format(t), gamma=2.2)
+    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/shepard_rendering/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
 
@@ -66,13 +66,13 @@ print('saved loss_curve.png')
 
 # Render the final result.
 final = pydiffvg.ShepardRenderFunction.apply(positions_n * torch.tensor([canvas_width, canvas_height]), colors, q, canvas_width, canvas_height)
-pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/shepard_rendering/final.png', gamma=2.2)
+pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/shepard_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------
 # Visualization: overlay control point locations on the final render.
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8)) # Creates a matplotlib figure to draw on
-display_img = final.detach().clamp(0, 1).cpu().numpy() ** (1 / 2.2) # Gets the final rendered image from PyTorch
+display_img = final.detach().clamp(0, 1).cpu().numpy() # Gets the final rendered image from PyTorch
 ax.imshow(display_img)
 
 # Gets the pixel coordinates of the control points and plots small red dots at each of those coordinates
@@ -115,7 +115,7 @@ axes[0].imshow(target_np)
 axes[0].set_title('Target')
 axes[0].axis('off')
 
-axes[1].imshow(final_np ** (1/2.2))
+axes[1].imshow(final_np)
 axes[1].set_title('Rendered')
 axes[1].axis('off')
 
