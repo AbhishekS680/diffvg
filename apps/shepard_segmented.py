@@ -20,7 +20,7 @@ iters = 100
 seg_size = 0.2 # controls segment size, a larger value means fewer but bigger segments
 
 # --- Load target image ---
-target_np = skimage.io.imread('imgs/canada_flag.jpg').astype(np.float32) / 255.0
+target_np = skimage.io.imread('imgs/fruit_basket.png').astype(np.float32) / 255.0
 target_np = target_np[:, :, :3]
 canvas_height, canvas_width = target_np.shape[0], target_np.shape[1]
 print('target shape:', target_np.shape)
@@ -166,6 +166,21 @@ plt.savefig('results/shepard_segmented/final_labeled.png', bbox_inches='tight', 
 plt.close(fig)
 print('saved final_labeled.png')
 
+# -------------------------------------------------------------------
+# Per-pixel error heatmap
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 6))
+
+# Per-pixel error: mean squared difference across RGB channels
+error_map = ((target_np - final_image) ** 2).mean(axis=2)
+
+im = ax.imshow(error_map, cmap='inferno')
+ax.axis('off')
+fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+plt.savefig('results/shepard_segmented/error_heatmap.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved error_heatmap.png')
+
 # --- Comparison: target | segmentation | rendered | error heatmap ---
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 
@@ -181,7 +196,6 @@ axes[2].imshow(final_image)
 axes[2].set_title(f'Segmented Shepard ({N_per_segment} pts/segment)')
 axes[2].axis('off')
 
-error_map = ((target_np - final_image) ** 2).mean(axis=2)
 im = axes[3].imshow(error_map, cmap='inferno')
 axes[3].set_title('Error heatmap')
 axes[3].axis('off')
