@@ -20,7 +20,7 @@ iters = 100
 seg_size = 0.2 # controls segment size, a larger value means fewer but bigger segments
 
 # --- Load target image ---
-target_np = skimage.io.imread('imgs/spider_rgb.png').astype(np.float32) / 255.0
+target_np = skimage.io.imread('imgs/canada_flag.jpg').astype(np.float32) / 255.0
 target_np = target_np[:, :, :3]
 canvas_height, canvas_width = target_np.shape[0], target_np.shape[1]
 print('target shape:', target_np.shape)
@@ -71,6 +71,8 @@ print('Saved individual segments')
 print('Running per-segment Shepard optimization...')
 final_image = np.zeros_like(target_np) # Starts off as empty, but the segments will be written on it
 target_tensor = torch.from_numpy(target_np)
+
+all_positions = []  # collect final control point positions from each segment
 
 for seg_id in range(n_segments):
     mask = (labels_2d == seg_id)
@@ -135,6 +137,8 @@ for seg_id in range(n_segments):
             positions, colors, q, canvas_width, canvas_height)
         final_image[mask] = img.clamp(0, 1).numpy()[mask]
 
+        all_positions.append(positions_n.detach() * torch.tensor([canvas_width, canvas_height]))
+
         # Save frame showing reconstruction progress after each segment
         frame = torch.from_numpy(final_image.astype(np.float32))
         pydiffvg.imwrite(frame, f'results/shepard_segmented/iter_{seg_id}.png', gamma=1.0)
@@ -143,6 +147,24 @@ for seg_id in range(n_segments):
 final_tensor = torch.from_numpy(final_image.astype(np.float32))
 pydiffvg.imwrite(final_tensor, 'results/shepard_segmented/final.png', gamma=1.0)
 print('saved final.png')
+
+# -------------------------------------------------------------------
+# Visualization: overlay all control point locations on the final render
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 8))
+ax.imshow(final_image)
+
+for pos in all_positions:
+    pos_np = pos.cpu().numpy()
+    ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=10, edgecolors='white', linewidths=0.5)
+
+ax.set_xlim(0, canvas_width)
+ax.set_ylim(canvas_height, 0)
+fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+ax.axis('off')
+plt.savefig('results/shepard_segmented/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
+plt.close(fig)
+print('saved final_labeled.png')
 
 # --- Comparison: target | segmentation | rendered | error heatmap ---
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
