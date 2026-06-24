@@ -75,7 +75,7 @@ target_tensor = torch.from_numpy(target_np)
 all_positions = []  # collect final control point positions from each segment
 
 for seg_id in range(n_segments):
-    mask = (labels_2d == seg_id)
+    mask = (labels_2d == seg_id) # A boolean grid where its true for only pixels in the segment
     
     # Edge case if a boundary has no pixels
     if mask.sum() == 0:
@@ -100,7 +100,7 @@ for seg_id in range(n_segments):
     colors = torch.rand(N_per_segment, 3).clamp(0, 1).clone().requires_grad_(True)
 
     optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
-    mask_tensor = torch.from_numpy(mask).unsqueeze(-1).expand(-1, -1, 3)
+    mask_tensor = torch.from_numpy(mask).unsqueeze(-1).expand(-1, -1, 3) # True is 1.0, and false is 0.0
 
     for t in range(iters):
         optimizer.zero_grad()
