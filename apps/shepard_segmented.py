@@ -73,6 +73,7 @@ final_image = np.zeros_like(target_np) # Starts off as empty, but the segments w
 target_tensor = torch.from_numpy(target_np)
 
 all_positions = []  # collect final control point positions from each segment
+segment_losses = []
 
 for seg_id in range(n_segments):
     mask = (labels_2d == seg_id) # A boolean grid where its true for only pixels in the segment
@@ -129,6 +130,7 @@ for seg_id in range(n_segments):
             colors.clamp_(0.0, 1.0)
 
     print(f'segment {seg_id+1}/{n_segments} done, loss: {loss.item():.2f}')
+    segment_losses.append(loss.item())
 
     # Write this segment's pixels into the final image
     with torch.no_grad():
@@ -147,6 +149,18 @@ for seg_id in range(n_segments):
 final_tensor = torch.from_numpy(final_image.astype(np.float32))
 pydiffvg.imwrite(final_tensor, 'results/shepard_segmented/final.png', gamma=1.0)
 print('saved final.png')
+
+# --------------------------------------
+# Plot final loss per segment
+# --------------------------------------
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.bar(range(len(segment_losses)), segment_losses)
+ax.set_xlabel('Segment ID')
+ax.set_ylabel('Final loss')
+ax.set_title(f'Final loss per segment (N={N_per_segment} pts, {iters} iters)')
+plt.savefig('results/shepard_segmented/loss_per_segment.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved loss_per_segment.png')
 
 # -------------------------------------------------------------------
 # Visualization: overlay all control point locations on the final render
