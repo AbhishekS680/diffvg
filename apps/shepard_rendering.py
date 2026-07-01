@@ -10,14 +10,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-N = 50 # Number of control points
+N = 30 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
 iters = 100
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/spider_rgb.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/shepard_rendering/target.png', gamma=1.0)
@@ -36,6 +36,15 @@ for t in range(iters):
     positions = positions_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height) # forward → C++ render_shepard
     loss = (img - target).pow(2).sum() # how wrong is the current render
+
+    # # Repulsion: penalize control points that are too close to each other
+    # positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+    # diff = positions_px.unsqueeze(0) - positions_px.unsqueeze(1)  # (N, N, 2)
+    # dist_sq = diff.pow(2).sum(dim=2) + 1.0  # (N, N) squared distances, +1 prevents division by zero
+    # eye_mask = 1 - torch.eye(N)
+    # repulsion = (1.0 / dist_sq * eye_mask).sum()
+    # loss = loss + 0.001 * repulsion
+
     loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
     
