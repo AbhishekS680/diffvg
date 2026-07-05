@@ -50,7 +50,7 @@ for t in range(iters):
     loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
 
-    # Per-point gradient magnitudes — how hard is each control point being pulled?
+    # Per-point gradient magnitudes, how hard is each control point being pulled?
     pos_grad_norms = positions_n.grad.norm(dim=1) # (N,) one value per point
     color_grad_norms = colors.grad.norm(dim=1) # (N,) one value per point
 
