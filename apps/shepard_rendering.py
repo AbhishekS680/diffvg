@@ -29,6 +29,8 @@ colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 loss_history = []
 
+# Clear old gradient log before a fresh run
+open('results/shepard_rendering/gradient_log.txt', 'w').close()
 
 # Run Adam iterations.
 for t in range(iters):
@@ -47,9 +49,22 @@ for t in range(iters):
 
     loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
-    
+
+    # Per-point gradient magnitudes — how hard is each control point being pulled?
+    pos_grad_norms = positions_n.grad.norm(dim=1) # (N,) one value per point
+    color_grad_norms = colors.grad.norm(dim=1) # (N,) one value per point
+
     print('iter', t, 'loss', loss.item())
-    print('positions.grad norm:', positions_n.grad.norm().item())
+    print('position grad — min/max/mean:',
+      pos_grad_norms.min().item(), pos_grad_norms.max().item(), pos_grad_norms.mean().item())
+    print('color grad — min/max/mean:',
+      color_grad_norms.min().item(), color_grad_norms.max().item(), color_grad_norms.mean().item())
+
+    with open('results/shepard_rendering/gradient_log.txt', 'a') as f:
+        f.write(f'iter {t}\n')
+        f.write(f'  position grad norms: {pos_grad_norms.detach().numpy().tolist()}\n')
+        f.write(f'  color grad norms: {color_grad_norms.detach().numpy().tolist()}\n')
+
     optimizer.step() # Adam reads .grad → moves positions_n and colors
 
     # Helps the optimized parameters stay inside the bounds[0,1] after each optimizer.step()
@@ -87,6 +102,11 @@ ax.imshow(display_img)
 # Gets the pixel coordinates of the control points and plots small red dots at each of those coordinates
 pos_np = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).cpu().numpy()
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
+
+# Label each control point with its index
+for idx, (x, y) in enumerate(pos_np):
+    ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
+                xytext=(3, 3), textcoords='offset points')
 
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
