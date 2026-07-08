@@ -15,6 +15,14 @@ class WendlandField:
         self.colours = colours
         self.radii = radii
 
+class EllipseWendlandField:
+    def __init__(self, positions, colours, a, b, theta):
+        self.positions = positions
+        self.colours = colours
+        self.a = a
+        self.b = b
+        self.theta = theta
+
 class Ellipse:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

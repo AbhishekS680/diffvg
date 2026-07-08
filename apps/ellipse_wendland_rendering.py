@@ -1,0 +1,131 @@
+# ellipse_wendland_rendering.py
+# Anisotropic Wendland C2 kernel field renderer (ellipse support), pure PyTorch autodiff
+
+import pydiffvg
+import torch
+import skimage.io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
+
+os.makedirs('results/ellipse_wendland_rendering', exist_ok=True)
+
+N = 150
+iters = 100
+
+pydiffvg.set_use_gpu(torch.cuda.is_available())
+
+target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = target[:, :, :3]
+canvas_height, canvas_width = target.shape[0], target.shape[1]
+pydiffvg.imwrite(target.cpu(), 'results/ellipse_wendland_rendering/target.png', gamma=1.0)
+
+# Initialize N control points, colors, and ellipse shape parameters
+positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)         # normalized [0,1]
+colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
+log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)  # semi-axis a
+log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)  # semi-axis b
+theta       = torch.zeros(N).clone().requires_grad_(True)             # rotation, radians
+
+optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
+loss_history = []
+
+for t in range(iters):
+    optimizer.zero_grad()
+    positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+    a_px = torch.exp(log_a) * canvas_width
+    b_px = torch.exp(log_b) * canvas_width
+    img = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+    loss = (img - target).pow(2).sum()
+    loss_history.append(loss.item())
+    loss.backward()
+
+    print('iter', t, 'loss', loss.item())
+    a_current = torch.exp(log_a.detach())
+    b_current = torch.exp(log_b.detach())
+    print('a range:', a_current.min().item(), '-', a_current.max().item())
+    print('b range:', b_current.min().item(), '-', b_current.max().item())
+
+    optimizer.step()
+
+    with torch.no_grad():
+        positions_n.clamp_(0.0, 1.0)
+        colors.clamp_(0.0, 1.0)
+        log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
+        log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
+        # theta is intentionally unclamped — rotation naturally wraps
+
+    pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
+
+print(f'final loss: {loss.item():.4f}')
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(loss_history)
+ax.set_xlabel('Iteration')
+ax.set_ylabel('Loss')
+ax.set_title(f'Convergence (N={N})')
+plt.savefig('results/ellipse_wendland_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+
+positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+a_px = torch.exp(log_a) * canvas_width
+b_px = torch.exp(log_b) * canvas_width
+final = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/final.png', gamma=1.0)
+
+# -------------------------------------------------------------------
+# Visualization: overlay control point locations on the final render.
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 8))
+display_img = final.detach().clamp(0, 1).cpu().numpy()
+ax.imshow(display_img)
+
+pos_np = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).cpu().numpy()
+ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
+
+ax.set_xlim(0, canvas_width)
+ax.set_ylim(canvas_height, 0)
+fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+ax.axis('off')
+plt.savefig('results/ellipse_wendland_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
+plt.close(fig)
+print('saved final_labeled.png')
+
+# -------------------------------------------------------------------
+# Per-pixel error heatmap
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(8, 6))
+target_np = target.cpu().numpy()
+final_np = final.detach().clamp(0, 1).cpu().numpy()
+error_map = ((target_np - final_np) ** 2).mean(axis=2)
+im = ax.imshow(error_map, cmap='inferno')
+ax.axis('off')
+fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+plt.savefig('results/ellipse_wendland_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved error_heatmap.png')
+
+# -------------------------------------------------------------------
+# Comparison: target | rendered | error heatmap
+# -------------------------------------------------------------------
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+axes[0].imshow(target_np)
+axes[0].set_title('Target')
+axes[0].axis('off')
+axes[1].imshow(final_np)
+axes[1].set_title('Rendered')
+axes[1].axis('off')
+im = axes[2].imshow(error_map, cmap='inferno')
+axes[2].set_title('Error heatmap')
+axes[2].axis('off')
+fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
+plt.savefig('results/ellipse_wendland_rendering/all_comparison.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved all_comparison.png')
+
+# Convert the intermediate renderings to a video.
+from subprocess import call
+call(["ffmpeg", "-framerate", "24", "-i",
+    "results/ellipse_wendland_rendering/iter_%d.png", "-vb", "20M",
+    "results/ellipse_wendland_rendering/out.mp4"])

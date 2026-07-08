@@ -32,6 +32,33 @@ struct WendlandField {
         return ptr<void>(this);
     }
 };
+
+struct EllipseWendlandField {
+    EllipseWendlandField(ptr<float> positions,
+                          ptr<float> colours,
+                          ptr<float> a,
+                          ptr<float> b,
+                          ptr<float> theta,
+                          int num_points) :
+        positions(positions.get()),
+        colours(colours.get()),
+        a(a.get()),
+        b(b.get()),
+        theta(theta.get()),
+        num_points(num_points) {}
+
+    float *positions;
+    float *colours;
+    float *a;
+    float *b;
+    float *theta;
+    int num_points;
+
+    ptr<void> get_ptr() {
+        return ptr<void>(this);
+    }
+};
+
 struct Circle {
     float radius;
     Vector2f center;

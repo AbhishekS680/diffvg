@@ -1757,6 +1757,149 @@ void render_wendland(const WendlandField &field,
     }
 }
 
+// Anisotropic (ellipse) Wendland C2 kernel field renderer
+// Forward pass: same compact-support kernel as WendlandField, but t is computed
+// using a rotated, per-axis-scaled distance instead of a single radius.
+// Backward pass: adds gradients w.r.t. a, b, and theta on top of position/colour.
+void render_ellipse_wendland(const EllipseWendlandField &field,
+                             ptr<float> render_image,
+                             ptr<float> d_render_image,
+                             ptr<float> d_positions,
+                             ptr<float> d_colours,
+                             ptr<float> d_a,
+                             ptr<float> d_b,
+                             ptr<float> d_theta,
+                             int width,
+                             int height) {
+    const int N = field.num_points;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float total_weight = 0.0f;
+            float r = 0.0f, g = 0.0f, b_col = 0.0f;
+
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float ai = field.a[i];
+                float bi = field.b[i];
+                float th = field.theta[i];
+
+                float dx = x - px;
+                float dy = y - py;
+
+                float cosT = cos(th);
+                float sinT = sin(th);
+
+                // Rotate offset into the ellipse's own (axis-aligned) frame
+                float dxp =  cosT * dx + sinT * dy;
+                float dyp = -sinT * dx + cosT * dy;
+
+                float u = dxp / ai;
+                float v = dyp / bi;
+                float t = sqrt(u*u + v*v);
+
+                if (t >= 1.0f) continue;
+
+                float one_minus_t = 1.0f - t;
+                float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+
+                r += w * field.colours[i * 3 + 0];
+                g += w * field.colours[i * 3 + 1];
+                b_col += w * field.colours[i * 3 + 2];
+                total_weight += w;
+            }
+
+            if (total_weight > 1e-8f) {
+                r /= total_weight;
+                g /= total_weight;
+                b_col /= total_weight;
+            }
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = r;
+                render_image.get()[index + 1] = g;
+                render_image.get()[index + 2] = b_col;
+            }
+
+            if (d_render_image.get() != nullptr && total_weight > 1e-8f) {
+                float grad_r = d_render_image.get()[index + 0];
+                float grad_g = d_render_image.get()[index + 1];
+                float grad_b = d_render_image.get()[index + 2];
+
+                for (int i = 0; i < N; i++) {
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float ai = field.a[i];
+                    float bi = field.b[i];
+                    float th = field.theta[i];
+
+                    float dx = x - px;
+                    float dy = y - py;
+
+                    float cosT = cos(th);
+                    float sinT = sin(th);
+
+                    float dxp =  cosT * dx + sinT * dy;
+                    float dyp = -sinT * dx + cosT * dy;
+
+                    float u = dxp / ai;
+                    float v = dyp / bi;
+                    float t = sqrt(u*u + v*v);
+
+                    if (t >= 1.0f) continue;
+
+                    float one_minus_t = 1.0f - t;
+                    float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
+                    float w = one_minus_t3 * one_minus_t * (4.0f*t + 1.0f);
+
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
+                        d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
+                        d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
+                    }
+
+                    float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
+                                   grad_g * (field.colours[i*3+1] - g) +
+                                   grad_b * (field.colours[i*3+2] - b_col)) / total_weight;
+
+                    float dw_dt = -20.0f * t * one_minus_t3;
+                    float dL_dt = dL_dw * dw_dt;
+
+                    if (t > 1e-6f) {
+                        // dt/dpx, dt/dpy — chain rule through the rotation
+                        float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
+                        float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
+
+                        if (d_positions.get() != nullptr) {
+                            d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
+                            d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
+                        }
+
+                        // dt/da, dt/db — how t changes as each semi-axis stretches
+                        if (d_a.get() != nullptr) {
+                            float dt_da = -(u*u) / (t * ai);
+                            d_a.get()[i] += dL_dt * dt_da;
+                        }
+                        if (d_b.get() != nullptr) {
+                            float dt_db = -(v*v) / (t * bi);
+                            d_b.get()[i] += dL_dt * dt_db;
+                        }
+
+                        // dt/dtheta — how t changes as the ellipse rotates.
+                        // Zero when a == b, as it should be for a circle.
+                        if (d_theta.get() != nullptr) {
+                            float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
+                            d_theta.get()[i] += dL_dt * dt_dtheta;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
@@ -1798,6 +1941,13 @@ PYBIND11_MODULE(diffvg, m) {
         .def_readonly("num_points", &WendlandField::num_points);
 
     m.def("render_wendland", &render_wendland, "");
+
+    py::class_<EllipseWendlandField>(m, "EllipseWendlandField")
+        .def(py::init<ptr<float>, ptr<float>, ptr<float>, ptr<float>, ptr<float>, int>())
+        .def("get_ptr", &EllipseWendlandField::get_ptr)
+        .def_readonly("num_points", &EllipseWendlandField::num_points);
+
+    m.def("render_ellipse_wendland", &render_ellipse_wendland, "");
 
     py::class_<Circle>(m, "Circle")
         .def(py::init<float, Vector2f>())
