@@ -1,7 +1,7 @@
 # ellipse_shepard_refine.py
-# Residual refinement: ellipse Wendland corrects Shepard's leftover error.
-# Shepard's output is a fixed base layer (loaded from disk, not re-optimized);
-# only the ellipse correction layer is trained.
+# Residual refinement: ellipse Wendland corrects Shepard's leftover error
+# Shepard's output is a fixed base layer
+# only the ellipse correction layer is trained
 
 import pydiffvg
 import torch
