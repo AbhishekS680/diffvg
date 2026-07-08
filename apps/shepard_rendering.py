@@ -45,7 +45,7 @@ for t in range(iters):
     # dist_sq = diff.pow(2).sum(dim=2) + 1.0  # (N, N) squared distances, +1 prevents division by zero
     # eye_mask = 1 - torch.eye(N)
     # repulsion = (1.0 / dist_sq * eye_mask).sum()
-    # loss = loss + 0.001 * repulsion
+    # loss = loss + 0.01 * repulsion
 
     loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
