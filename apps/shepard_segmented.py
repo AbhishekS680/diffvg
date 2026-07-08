@@ -150,9 +150,9 @@ final_tensor = torch.from_numpy(final_image.astype(np.float32))
 pydiffvg.imwrite(final_tensor, 'results/shepard_segmented/final.png', gamma=1.0)
 print('saved final.png')
 
-# --------------------------------------
+# -----------------------------
 # Plot final loss per segment
-# --------------------------------------
+# -----------------------------
 fig, ax = plt.subplots(figsize=(10, 5))
 ax.bar(range(len(segment_losses)), segment_losses)
 ax.set_xlabel('Segment ID')
@@ -162,9 +162,9 @@ plt.savefig('results/shepard_segmented/loss_per_segment.png', bbox_inches='tight
 plt.close(fig)
 print('saved loss_per_segment.png')
 
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # Visualization: overlay all control point locations on the final render
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_image)
 
@@ -180,9 +180,9 @@ plt.savefig('results/shepard_segmented/final_labeled.png', bbox_inches='tight', 
 plt.close(fig)
 print('saved final_labeled.png')
 
-# -------------------------------------------------------------------
+# -------------------------
 # Per-pixel error heatmap
-# -------------------------------------------------------------------
+# -------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
 
 # Per-pixel error: mean squared difference across RGB channels
@@ -195,7 +195,10 @@ plt.savefig('results/shepard_segmented/error_heatmap.png', bbox_inches='tight', 
 plt.close(fig)
 print('saved error_heatmap.png')
 
-# --- Comparison: target | segmentation | rendered | error heatmap ---
+# ---------------------------------------------------------------
+# Comparison: target | segmentation | rendered | error heatmap
+# ---------------------------------------------------------------
+
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 
 axes[0].imshow(target_np)
