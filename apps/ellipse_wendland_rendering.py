@@ -1,5 +1,6 @@
 # ellipse_wendland_rendering.py
-# Anisotropic Wendland C2 kernel field renderer (ellipse support), pure PyTorch autodiff
+# Anisotropic Wendland C2 kernel field renderer
+# The kernel's influence isn't the same in every direction
 
 import pydiffvg
 import torch
@@ -11,22 +12,25 @@ import os
 
 os.makedirs('results/ellipse_wendland_rendering', exist_ok=True)
 
-N = 150
+N = 30
 iters = 100
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread('imgs/spider_rgb.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/ellipse_wendland_rendering/target.png', gamma=1.0)
 
 # Initialize N control points, colors, and ellipse shape parameters
-positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)         # normalized [0,1]
+positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
-log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)  # semi-axis a
-log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)  # semi-axis b
-theta       = torch.zeros(N).clone().requires_grad_(True)             # rotation, radians
+
+# Are log so they stay positive, start as a circle
+log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True) # semi-axis a
+log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True) # semi-axis b
+
+theta       = torch.zeros(N).clone().requires_grad_(True) # rotation, radians
 
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
@@ -50,11 +54,12 @@ for t in range(iters):
     optimizer.step()
 
     with torch.no_grad():
+        # forces parameters into valid ranges after Adam updated them
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-        # theta is intentionally unclamped — rotation naturally wraps
+        # theta is unclamped, rotation naturally wraps
 
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
 
