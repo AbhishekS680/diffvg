@@ -13,7 +13,7 @@ import os
 
 os.makedirs('results/ellipse_shepard_refine', exist_ok=True)
 
-N = 150
+N = 30
 iters = 100
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
