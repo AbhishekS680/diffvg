@@ -17,7 +17,7 @@ iters = 100
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/spider_rgb.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/ellipse_wendland_rendering/target.png', gamma=1.0)
