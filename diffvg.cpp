@@ -1648,6 +1648,115 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+// Wendland C2 kernel field renderer
+// Forward pass: for each pixel, compute compactly-supported-kernel-weighted colour sum
+// Backward pass: accumulate gradients w.r.t. positions, colours, and radii
+void render_wendland(const WendlandField &field,
+                     ptr<float> render_image,
+                     ptr<float> d_render_image,
+                     ptr<float> d_positions,
+                     ptr<float> d_colours,
+                     ptr<float> d_radii,
+                     int width,
+                     int height) {
+    const int N = field.num_points;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float total_weight = 0.0f;
+            float r = 0.0f, g = 0.0f, b = 0.0f;
+
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float rad = field.radii[i];
+
+                float dx = x - px;
+                float dy = y - py;
+                float dist = sqrt(dx*dx + dy*dy);
+                float t = dist / rad;
+
+                if (t >= 1.0f) continue; // outside compact support, zero weight
+
+                float one_minus_t = 1.0f - t;
+                float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+
+                r += w * field.colours[i * 3 + 0];
+                g += w * field.colours[i * 3 + 1];
+                b += w * field.colours[i * 3 + 2];
+                total_weight += w;
+            }
+
+            if (total_weight > 1e-8f) {
+                r /= total_weight;
+                g /= total_weight;
+                b /= total_weight;
+            }
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = r;
+                render_image.get()[index + 1] = g;
+                render_image.get()[index + 2] = b;
+            }
+
+            // Backward pass
+            if (d_render_image.get() != nullptr && total_weight > 1e-8f) {
+                float grad_r = d_render_image.get()[index + 0];
+                float grad_g = d_render_image.get()[index + 1];
+                float grad_b = d_render_image.get()[index + 2];
+
+                for (int i = 0; i < N; i++) {
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float rad = field.radii[i];
+
+                    float dx = x - px;
+                    float dy = y - py;
+                    float dist = sqrt(dx*dx + dy*dy);
+                    float t = dist / rad;
+
+                    if (t >= 1.0f) continue; // zero weight, zero gradient contribution
+
+                    float one_minus_t = 1.0f - t;
+                    float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
+                    float w = one_minus_t3 * one_minus_t * (4.0f*t + 1.0f);
+
+                    // dL/dcolour_i: same quotient-rule shape as Shepard
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
+                        d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
+                        d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
+                    }
+
+                    // dL/dw_i — identical structure to Shepard's dL_dw
+                    float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
+                                   grad_g * (field.colours[i*3+1] - g) +
+                                   grad_b * (field.colours[i*3+2] - b)) / total_weight;
+
+                    // dw/dt for Wendland C2: derivative of (1-t)^4(4t+1) is -20*t*(1-t)^3
+                    float dw_dt = -20.0f * t * one_minus_t3;
+
+                    if (dist > 1e-8f) {
+                        // dt/ddist = 1/rad ; ddist/dpx = -dx/dist ; ddist/dpy = -dy/dist
+                        float dL_dt = dL_dw * dw_dt;
+                        if (d_positions.get() != nullptr) {
+                            d_positions.get()[i * 2 + 0] += dL_dt * (1.0f / rad) * (-dx / dist);
+                            d_positions.get()[i * 2 + 1] += dL_dt * (1.0f / rad) * (-dy / dist);
+                        }
+                    }
+
+                    // dt/drad = -dist/rad^2 = -t/rad
+                    if (d_radii.get() != nullptr) {
+                        float dt_drad = -t / rad;
+                        d_radii.get()[i] += dL_dw * dw_dt * dt_drad;
+                    }
+                }
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
@@ -1682,6 +1791,13 @@ PYBIND11_MODULE(diffvg, m) {
         .value("ellipse", ShapeType::Ellipse)
         .value("path", ShapeType::Path)
         .value("rect", ShapeType::Rect);
+
+    py::class_<WendlandField>(m, "WendlandField")
+        .def(py::init<ptr<float>, ptr<float>, ptr<float>, int>())
+        .def("get_ptr", &WendlandField::get_ptr)
+        .def_readonly("num_points", &WendlandField::num_points);
+
+    m.def("render_wendland", &render_wendland, "");
 
     py::class_<Circle>(m, "Circle")
         .def(py::init<float, Vector2f>())

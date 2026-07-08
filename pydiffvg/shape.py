@@ -9,6 +9,12 @@ class Circle:
         self.stroke_width = stroke_width
         self.id = id
 
+class WendlandField:
+    def __init__(self, positions, colours, radii):
+        self.positions = positions
+        self.colours = colours
+        self.radii = radii
+
 class Ellipse:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

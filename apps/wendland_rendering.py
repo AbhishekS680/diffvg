@@ -29,30 +29,12 @@ radius       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_
 optimizer = torch.optim.Adam([positions_n, colors, radius], lr=1e-2)
 loss_history = []
 
-def wendland_render(positions_n, colors, log_r, canvas_width, canvas_height):
-    ys, xs = torch.meshgrid(
-        torch.linspace(0, 1, canvas_height),
-        torch.linspace(0, 1, canvas_width),
-        indexing='ij'
-    )
-    coords = torch.stack([xs, ys], dim=-1)               # (H, W, 2)
-
-    r = torch.exp(log_r)                                  # (N,)
-    diff = coords.unsqueeze(0) - positions_n.view(N, 1, 1, 2)
-    dist = torch.norm(diff, dim=-1)                        # (N, H, W)
-    t = dist / r.view(N, 1, 1)
-
-    inside = t < 1
-    w = torch.where(inside, (1 - t).clamp(min=0)**4 * (4 * t + 1), torch.zeros_like(t))
-
-    w_sum = w.sum(dim=0) + 1e-8
-    color_sum = (w.unsqueeze(-1) * colors.view(N, 1, 1, 3)).sum(dim=0)
-    return color_sum / w_sum.unsqueeze(-1)
-
 # Run Adam iterations.
 for t in range(iters):
     optimizer.zero_grad()
-    img = wendland_render(positions_n, colors, radius, canvas_width, canvas_height)
+    positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+    radius_px = torch.exp(radius) * canvas_width
+    img = pydiffvg.WendlandRenderFunction.apply(positions_px, colors, radius_px, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum() # how wrong is the current render
     loss_history.append(loss.item())
     loss.backward() # backward → PyTorch autodiff computes .grad for positions, colors, radius
@@ -86,7 +68,9 @@ plt.close(fig)
 print('saved loss_curve.png')
 
 # Render the final result.
-final = wendland_render(positions_n, colors, radius, canvas_width, canvas_height)
+positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+radius_px = torch.exp(radius) * canvas_width
+final = pydiffvg.WendlandRenderFunction.apply(positions_px, colors, radius_px, canvas_width, canvas_height)
 pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/wendland_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------
