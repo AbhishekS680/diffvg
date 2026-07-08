@@ -1758,7 +1758,7 @@ void render_wendland(const WendlandField &field,
 }
 
 // Anisotropic (ellipse) Wendland C2 kernel field renderer
-// Forward pass: same compact-support kernel as WendlandField, but t is computed
+// Forward pass: for each pixel, compute compactly-supported-kernel-weighted colour sum
 // using a rotated, per-axis-scaled distance instead of a single radius.
 // Backward pass: adds gradients w.r.t. a, b, and theta on top of position/colour.
 void render_ellipse_wendland(const EllipseWendlandField &field,
@@ -1785,6 +1785,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 float bi = field.b[i];
                 float th = field.theta[i];
 
+                // Distance from control point to pixel
                 float dx = x - px;
                 float dy = y - py;
 
@@ -1797,10 +1798,11 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
 
                 float u = dxp / ai;
                 float v = dyp / bi;
-                float t = sqrt(u*u + v*v);
+                float t = sqrt(u*u + v*v); // Used to figure out how far the pixel is from the control point
 
-                if (t >= 1.0f) continue;
+                if (t >= 1.0f) continue; // Check if we're outside the ellipse's influence
 
+                // If 1-t is negative or zero, it will become 0
                 float one_minus_t = 1.0f - t;
                 float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
 
@@ -1888,7 +1890,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                         }
 
                         // dt/dtheta — how t changes as the ellipse rotates.
-                        // Zero when a == b, as it should be for a circle.
+                        // Zero when a == b, when it's a circle.
                         if (d_theta.get() != nullptr) {
                             float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
                             d_theta.get()[i] += dL_dt * dt_dtheta;
