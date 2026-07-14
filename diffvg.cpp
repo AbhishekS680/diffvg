@@ -21,6 +21,7 @@
 #include <pybind11/stl.h>
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
+#include <vector>
 
 namespace py = pybind11;
 
@@ -1659,26 +1660,28 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                              int width,
                              int height) {
     const int N = field.num_points; // Number of ellipses
+
+    // Reused per-pixel storage: history of the accumulator's state after
+    // each ellipse, plus cached t/alpha_i, so backward doesn't need to
+    // recompute the whole forward pass for every ellipse (O(N) instead of O(N^2)).
+    std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
+    std::vector<float> hist_t(N), hist_alpha_i(N);
+
     // Looking at each pixel one by one
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             // Accumulator starts at background: black, alpha 0
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
-
             for (int i = 0; i < N; i++) { // Loop over every ellipse
                 float px = field.positions[i * 2 + 0];
                 float py = field.positions[i * 2 + 1];
-
                 // Ellipse's two semi-axis lengths
                 float ai = field.a[i];
                 float bi = field.b[i];
-
                 float th = field.theta[i]; // Rotation angle
-
                 // How far away a pixel is from the ellipse center
                 float dx = x - px;
                 float dy = y - py;
-
                 float cosT = cos(th);
                 float sinT = sin(th);
                 float dxp =  cosT * dx + sinT * dy;
@@ -1686,41 +1689,83 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 float u = dxp / ai;
                 float v = dyp / bi;
                 float t = sqrt(u*u + v*v); // Distance from pixel to ellipse center, normalized in (u, v) space
-                if (t >= 1.0f) continue; // zero alpha, no contribution
 
-                // Wendland kernel formula
-                float one_minus_t = 1.0f - t;
-                float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+                float alpha_i = 0.0f; // Ellipse's opacity at the pixel, 0 if outside its influence
+                if (t < 1.0f) {
+                    // Wendland kernel formula
+                    float one_minus_t = 1.0f - t;
+                    float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+                    alpha_i = w;
 
-                float alpha_i = w; // Ellipse's opacity at the pixel
+                    // Ellipse's colour (red, green, blue)
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
 
-                // Ellipse's colour (red, green, blue)
-                float color_r = field.colours[i * 3 + 0];
-                float color_g = field.colours[i * 3 + 1];
-                float color_b = field.colours[i * 3 + 2];
-
-                // Over-operator: composite ellipse i on top of accumulator so far
-                accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
-                accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
-                accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
-                accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+                    // Over-operator: composite ellipse i on top of accumulator so far
+                    accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                    accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                    accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                    accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+                }
+                // Save the accumulator's state AFTER ellipse i, and cache t/alpha_i,
+                // whether or not this ellipse contributed (t >= 1.0f case just stores alpha_i = 0)
+                hist_r[i] = accum_r;
+                hist_g[i] = accum_g;
+                hist_b[i] = accum_b;
+                hist_alpha[i] = accum_alpha;
+                hist_t[i] = t;
+                hist_alpha_i[i] = alpha_i;
             }
-
             int index = (y * width + x) * 3;
             if (render_image.get() != nullptr) {
                 render_image.get()[index + 0] = accum_r;
                 render_image.get()[index + 1] = accum_g;
                 render_image.get()[index + 2] = accum_b;
             }
-
             // ---------- Backward pass ----------
             if (d_render_image.get() != nullptr) {
                 float d_curr_r = d_render_image.get()[index + 0];
                 float d_curr_g = d_render_image.get()[index + 1];
                 float d_curr_b = d_render_image.get()[index + 2];
                 float d_curr_alpha = 0.0f; // no alpha channel in output, starts at 0
-
                 for (int i = N - 1; i >= 0; i--) {
+                    float t = hist_t[i]; // looked up, not recomputed
+                    if (t >= 1.0f) continue; // zero alpha, no gradient contribution
+
+                    float alpha_i = hist_alpha_i[i]; // looked up, not recomputed
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    // Accumulator state BEFORE ellipse i — looked up from history
+                    // instead of recomputed via a j-loop over ellipses 0..i-1
+                    float prev_r     = (i > 0) ? hist_r[i - 1]     : 0.0f;
+                    float prev_g     = (i > 0) ? hist_g[i - 1]     : 0.0f;
+                    float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
+                    float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
+
+                    // Over-operator backward: split d_curr into d_prev, d_color_i, d_alpha_i
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+                    // Gradient into this ellipse's color
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    // Recompute the geometric quantities for ellipse i only (cheap —
+                    // this is O(1) per ellipse, not O(N) like the old j-loop was)
                     float px = field.positions[i * 2 + 0];
                     float py = field.positions[i * 2 + 1];
                     float ai = field.a[i];
@@ -1734,66 +1779,8 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                     float dyp = -sinT * dx + cosT * dy;
                     float u = dxp / ai;
                     float v = dyp / bi;
-                    float t = sqrt(u*u + v*v);
-                    if (t >= 1.0f) continue; // zero alpha, no gradient contribution
-
                     float one_minus_t = 1.0f - t;
                     float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
-                    float w = one_minus_t3 * one_minus_t * (4.0f*t + 1.0f);
-                    float alpha_i = w;
-
-                    float color_r = field.colours[i * 3 + 0];
-                    float color_g = field.colours[i * 3 + 1];
-                    float color_b = field.colours[i * 3 + 2];
-
-                    // Recompute accumulator state BEFORE ellipse i (i.e. using ellipses 0..i-1)
-                    float prev_r = 0.0f, prev_g = 0.0f, prev_b = 0.0f, prev_alpha = 0.0f;
-                    for (int j = 0; j < i; j++) {
-                        float pxj = field.positions[j * 2 + 0];
-                        float pyj = field.positions[j * 2 + 1];
-                        float aj = field.a[j];
-                        float bj = field.b[j];
-                        float thj = field.theta[j];
-                        float dxj = x - pxj;
-                        float dyj = y - pyj;
-                        float cosTj = cos(thj);
-                        float sinTj = sin(thj);
-                        float dxpj =  cosTj * dxj + sinTj * dyj;
-                        float dypj = -sinTj * dxj + cosTj * dyj;
-                        float uj = dxpj / aj;
-                        float vj = dypj / bj;
-                        float tj = sqrt(uj*uj + vj*vj);
-                        if (tj >= 1.0f) continue;
-                        float one_minus_tj = 1.0f - tj;
-                        float wj = one_minus_tj*one_minus_tj*one_minus_tj*one_minus_tj * (4.0f*tj + 1.0f);
-                        float alpha_j = wj;
-                        prev_r = prev_r * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 0];
-                        prev_g = prev_g * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 1];
-                        prev_b = prev_b * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 2];
-                        prev_alpha = prev_alpha * (1.0f - alpha_j) + alpha_j;
-                    }
-
-                    // Over-operator backward: split d_curr into d_prev, d_color_i, d_alpha_i
-                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
-                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
-                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
-                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
-
-                    float d_color_r = d_curr_r * alpha_i;
-                    float d_color_g = d_curr_g * alpha_i;
-                    float d_color_b = d_curr_b * alpha_i;
-
-                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
-                                     + d_curr_r * (color_r - prev_r)
-                                     + d_curr_g * (color_g - prev_g)
-                                     + d_curr_b * (color_b - prev_b);
-
-                    // Gradient into this ellipse's color
-                    if (d_colours.get() != nullptr) {
-                        d_colours.get()[i * 3 + 0] += d_color_r;
-                        d_colours.get()[i * 3 + 1] += d_color_g;
-                        d_colours.get()[i * 3 + 2] += d_color_b;
-                    }
 
                     // d_alpha_i feeds into the same dw/dt chain as before
                     float dw_dt = -20.0f * t * one_minus_t3;
@@ -1818,7 +1805,6 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                             d_theta.get()[i] += dL_dt * dt_dtheta;
                         }
                     }
-
                     // Move to the next (earlier) ellipse
                     d_curr_r = d_prev_r;
                     d_curr_g = d_prev_g;
