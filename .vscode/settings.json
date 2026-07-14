@@ -1,4 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "folder-color.pathColors": [
+        {
+            "filePath": "diffvg/shape.h",
+            "color": "foldercolorizer.color_0087ff"
+        }
+    ]
 }
