@@ -1648,10 +1648,6 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
-// Anisotropic (ellipse) Wendland C2 kernel field renderer
-// Forward pass: for each pixel, compute compactly-supported-kernel-weighted colour sum
-// using a rotated, per-axis-scaled distance instead of a single radius.
-// Backward pass: adds gradients w.r.t. a, b, and theta on top of position/colour.
 void render_ellipse_wendland(const EllipseWendlandField &field,
                              ptr<float> render_image,
                              ptr<float> d_render_image,
@@ -1663,11 +1659,11 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                              int width,
                              int height) {
     const int N = field.num_points;
-
+    // Looking at each pixel one by one
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            float total_weight = 0.0f;
-            float r = 0.0f, g = 0.0f, b_col = 0.0f;
+            // Accumulator starts at background: black, alpha 0
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
 
             for (int i = 0; i < N; i++) {
                 float px = field.positions[i * 2 + 0];
@@ -1675,120 +1671,40 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 float ai = field.a[i];
                 float bi = field.b[i];
                 float th = field.theta[i];
-
-                // Distance from control point to pixel
                 float dx = x - px;
                 float dy = y - py;
-
                 float cosT = cos(th);
                 float sinT = sin(th);
-
-                // Rotate offset into the ellipse's own (axis-aligned) frame
                 float dxp =  cosT * dx + sinT * dy;
                 float dyp = -sinT * dx + cosT * dy;
-
                 float u = dxp / ai;
                 float v = dyp / bi;
-                float t = sqrt(u*u + v*v); // Used to figure out how far the pixel is from the control point
+                float t = sqrt(u*u + v*v);
+                if (t >= 1.0f) continue; // zero alpha, no contribution
 
-                if (t >= 1.0f) continue; // Check if we're outside the ellipse's influence
-
-                // If 1-t is negative or zero, it will become 0
                 float one_minus_t = 1.0f - t;
                 float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+                float alpha_i = w;
 
-                r += w * field.colours[i * 3 + 0];
-                g += w * field.colours[i * 3 + 1];
-                b_col += w * field.colours[i * 3 + 2];
-                total_weight += w;
-            }
+                float color_r = field.colours[i * 3 + 0];
+                float color_g = field.colours[i * 3 + 1];
+                float color_b = field.colours[i * 3 + 2];
 
-            if (total_weight > 1e-8f) {
-                r /= total_weight;
-                g /= total_weight;
-                b_col /= total_weight;
+                // Over-operator: composite ellipse i on top of accumulator so far
+                accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
             }
 
             int index = (y * width + x) * 3;
             if (render_image.get() != nullptr) {
-                render_image.get()[index + 0] = r;
-                render_image.get()[index + 1] = g;
-                render_image.get()[index + 2] = b_col;
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
             }
 
-            if (d_render_image.get() != nullptr && total_weight > 1e-8f) {
-                float grad_r = d_render_image.get()[index + 0];
-                float grad_g = d_render_image.get()[index + 1];
-                float grad_b = d_render_image.get()[index + 2];
-
-                for (int i = 0; i < N; i++) {
-                    float px = field.positions[i * 2 + 0];
-                    float py = field.positions[i * 2 + 1];
-                    float ai = field.a[i];
-                    float bi = field.b[i];
-                    float th = field.theta[i];
-
-                    float dx = x - px;
-                    float dy = y - py;
-
-                    float cosT = cos(th);
-                    float sinT = sin(th);
-
-                    float dxp =  cosT * dx + sinT * dy;
-                    float dyp = -sinT * dx + cosT * dy;
-
-                    float u = dxp / ai;
-                    float v = dyp / bi;
-                    float t = sqrt(u*u + v*v);
-
-                    if (t >= 1.0f) continue;
-
-                    float one_minus_t = 1.0f - t;
-                    float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
-                    float w = one_minus_t3 * one_minus_t * (4.0f*t + 1.0f);
-
-                    if (d_colours.get() != nullptr) {
-                        d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
-                        d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
-                        d_colours.get()[i * 3 + 2] += grad_b * w / total_weight;
-                    }
-
-                    float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
-                                   grad_g * (field.colours[i*3+1] - g) +
-                                   grad_b * (field.colours[i*3+2] - b_col)) / total_weight;
-
-                    float dw_dt = -20.0f * t * one_minus_t3;
-                    float dL_dt = dL_dw * dw_dt;
-
-                    if (t > 1e-6f) {
-                        // dt/dpx, dt/dpy — chain rule through the rotation
-                        float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
-                        float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
-
-                        if (d_positions.get() != nullptr) {
-                            d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
-                            d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
-                        }
-
-                        // dt/da, dt/db — how t changes as each semi-axis stretches
-                        if (d_a.get() != nullptr) {
-                            float dt_da = -(u*u) / (t * ai);
-                            d_a.get()[i] += dL_dt * dt_da;
-                        }
-                        if (d_b.get() != nullptr) {
-                            float dt_db = -(v*v) / (t * bi);
-                            d_b.get()[i] += dL_dt * dt_db;
-                        }
-
-                        // dt/dtheta — how t changes as the ellipse rotates.
-                        // Zero when a == b, when it's a circle.
-                        if (d_theta.get() != nullptr) {
-                            float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
-                            d_theta.get()[i] += dL_dt * dt_dtheta;
-                        }
-                    }
-                }
-            }
+            // Backward pass
         }
     }
 }
