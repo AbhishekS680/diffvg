@@ -1713,7 +1713,119 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 render_image.get()[index + 2] = accum_b;
             }
 
-            // Backward pass
+            // ---------- Backward pass ----------
+            if (d_render_image.get() != nullptr) {
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f; // no alpha channel in output, starts at 0
+
+                for (int i = N - 1; i >= 0; i--) {
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float ai = field.a[i];
+                    float bi = field.b[i];
+                    float th = field.theta[i];
+                    float dx = x - px;
+                    float dy = y - py;
+                    float cosT = cos(th);
+                    float sinT = sin(th);
+                    float dxp =  cosT * dx + sinT * dy;
+                    float dyp = -sinT * dx + cosT * dy;
+                    float u = dxp / ai;
+                    float v = dyp / bi;
+                    float t = sqrt(u*u + v*v);
+                    if (t >= 1.0f) continue; // zero alpha, no gradient contribution
+
+                    float one_minus_t = 1.0f - t;
+                    float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
+                    float w = one_minus_t3 * one_minus_t * (4.0f*t + 1.0f);
+                    float alpha_i = w;
+
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    // Recompute accumulator state BEFORE ellipse i (i.e. using ellipses 0..i-1)
+                    float prev_r = 0.0f, prev_g = 0.0f, prev_b = 0.0f, prev_alpha = 0.0f;
+                    for (int j = 0; j < i; j++) {
+                        float pxj = field.positions[j * 2 + 0];
+                        float pyj = field.positions[j * 2 + 1];
+                        float aj = field.a[j];
+                        float bj = field.b[j];
+                        float thj = field.theta[j];
+                        float dxj = x - pxj;
+                        float dyj = y - pyj;
+                        float cosTj = cos(thj);
+                        float sinTj = sin(thj);
+                        float dxpj =  cosTj * dxj + sinTj * dyj;
+                        float dypj = -sinTj * dxj + cosTj * dyj;
+                        float uj = dxpj / aj;
+                        float vj = dypj / bj;
+                        float tj = sqrt(uj*uj + vj*vj);
+                        if (tj >= 1.0f) continue;
+                        float one_minus_tj = 1.0f - tj;
+                        float wj = one_minus_tj*one_minus_tj*one_minus_tj*one_minus_tj * (4.0f*tj + 1.0f);
+                        float alpha_j = wj;
+                        prev_r = prev_r * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 0];
+                        prev_g = prev_g * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 1];
+                        prev_b = prev_b * (1.0f - alpha_j) + alpha_j * field.colours[j * 3 + 2];
+                        prev_alpha = prev_alpha * (1.0f - alpha_j) + alpha_j;
+                    }
+
+                    // Over-operator backward: split d_curr into d_prev, d_color_i, d_alpha_i
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+
+                    // Gradient into this ellipse's color
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    // d_alpha_i feeds into the same dw/dt chain as before
+                    float dw_dt = -20.0f * t * one_minus_t3;
+                    float dL_dt = d_alpha_i * dw_dt;
+                    if (t > 1e-6f) {
+                        float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
+                        float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
+                        if (d_positions.get() != nullptr) {
+                            d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
+                            d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
+                        }
+                        if (d_a.get() != nullptr) {
+                            float dt_da = -(u*u) / (t * ai);
+                            d_a.get()[i] += dL_dt * dt_da;
+                        }
+                        if (d_b.get() != nullptr) {
+                            float dt_db = -(v*v) / (t * bi);
+                            d_b.get()[i] += dL_dt * dt_db;
+                        }
+                        if (d_theta.get() != nullptr) {
+                            float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
+                            d_theta.get()[i] += dL_dt * dt_dtheta;
+                        }
+                    }
+
+                    // Move to the next (earlier) ellipse
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+            }
         }
     }
 }
