@@ -1658,34 +1658,43 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                              ptr<float> d_theta,
                              int width,
                              int height) {
-    const int N = field.num_points;
+    const int N = field.num_points; // Number of ellipses
     // Looking at each pixel one by one
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             // Accumulator starts at background: black, alpha 0
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
 
-            for (int i = 0; i < N; i++) {
+            for (int i = 0; i < N; i++) { // Loop over every ellipse
                 float px = field.positions[i * 2 + 0];
                 float py = field.positions[i * 2 + 1];
+
+                // Ellipse's two semi-axis lengths
                 float ai = field.a[i];
                 float bi = field.b[i];
-                float th = field.theta[i];
+
+                float th = field.theta[i]; // Rotation angle
+
+                // How far away a pixel is from the ellipse center
                 float dx = x - px;
                 float dy = y - py;
+
                 float cosT = cos(th);
                 float sinT = sin(th);
                 float dxp =  cosT * dx + sinT * dy;
                 float dyp = -sinT * dx + cosT * dy;
                 float u = dxp / ai;
                 float v = dyp / bi;
-                float t = sqrt(u*u + v*v);
+                float t = sqrt(u*u + v*v); // Distance from pixel to ellipse center, normalized in (u, v) space
                 if (t >= 1.0f) continue; // zero alpha, no contribution
 
+                // Wendland kernel formula
                 float one_minus_t = 1.0f - t;
                 float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
-                float alpha_i = w;
 
+                float alpha_i = w; // Ellipse's opacity at the pixel
+
+                // Ellipse's colour (red, green, blue)
                 float color_r = field.colours[i * 3 + 0];
                 float color_g = field.colours[i * 3 + 1];
                 float color_b = field.colours[i * 3 + 2];
