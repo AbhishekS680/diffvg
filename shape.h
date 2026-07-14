@@ -13,26 +13,6 @@ enum class ShapeType {
     Rect
 };
 
-struct WendlandField {
-    WendlandField(ptr<float> positions,
-                  ptr<float> colours,
-                  ptr<float> radii,
-                  int num_points) :
-        positions(positions.get()),
-        colours(colours.get()),
-        radii(radii.get()),
-        num_points(num_points) {}
-
-    float *positions;
-    float *colours;
-    float *radii;
-    int num_points;
-
-    ptr<void> get_ptr() {
-        return ptr<void>(this);
-    }
-};
-
 struct EllipseWendlandField {
     EllipseWendlandField(ptr<float> positions,
                           ptr<float> colours,

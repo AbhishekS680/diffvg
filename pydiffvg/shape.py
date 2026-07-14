@@ -8,13 +8,7 @@ class Circle:
         self.center = center
         self.stroke_width = stroke_width
         self.id = id
-
-class WendlandField:
-    def __init__(self, positions, colours, radii):
-        self.positions = positions
-        self.colours = colours
-        self.radii = radii
-
+        
 class EllipseWendlandField:
     def __init__(self, positions, colours, a, b, theta):
         self.positions = positions

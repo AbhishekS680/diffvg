@@ -866,59 +866,6 @@ class RenderFunction(torch.autograd.Function):
         d_args.append(torch.tensor(scene.get_d_filter_radius()))
 
         return tuple(d_args)
-
-class WendlandRenderFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, positions, colours, radii, width, height):
-        positions_cpu = positions.contiguous().cpu()
-        colours_cpu   = colours.contiguous().cpu()
-        radii_cpu     = radii.contiguous().cpu()
-        render_image  = torch.zeros(height, width, 3)
-
-        field = diffvg.WendlandField(
-            diffvg.float_ptr(positions_cpu.data_ptr()),
-            diffvg.float_ptr(colours_cpu.data_ptr()),
-            diffvg.float_ptr(radii_cpu.data_ptr()),
-            positions_cpu.shape[0])
-
-        diffvg.render_wendland(field,
-            diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            width, height)
-
-        ctx.save_for_backward(positions_cpu, colours_cpu, radii_cpu)
-        ctx.width  = width
-        ctx.height = height
-        return render_image
-
-    @staticmethod
-    def backward(ctx, grad_img):
-        positions_cpu, colours_cpu, radii_cpu = ctx.saved_tensors
-        grad_img_cpu = grad_img.contiguous().cpu()
-
-        d_positions = torch.zeros_like(positions_cpu)
-        d_colours   = torch.zeros_like(colours_cpu)
-        d_radii     = torch.zeros_like(radii_cpu)
-
-        field = diffvg.WendlandField(
-            diffvg.float_ptr(positions_cpu.data_ptr()),
-            diffvg.float_ptr(colours_cpu.data_ptr()),
-            diffvg.float_ptr(radii_cpu.data_ptr()),
-            positions_cpu.shape[0])
-
-        diffvg.render_wendland(field,
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(grad_img_cpu.data_ptr()),
-            diffvg.float_ptr(d_positions.data_ptr()),
-            diffvg.float_ptr(d_colours.data_ptr()),
-            diffvg.float_ptr(d_radii.data_ptr()),
-            ctx.width, ctx.height)
-
-        return d_positions, d_colours, d_radii, None, None
-    
 class EllipseWendlandRenderFunction(torch.autograd.Function):
     # a, b are ACTUAL semi-axis lengths (post-exp), not log — apply exp() before
     # calling .apply(), same convention as radius in WendlandRenderFunction.
