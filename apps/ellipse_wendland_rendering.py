@@ -104,8 +104,8 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 # Quiver plot: direction each point moved, initial -> final
 # -------------------------------------------------------------------
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
-u = final_positions_px[:, 0] - initial_positions_px[:, 0]
-v = final_positions_px[:, 1] - initial_positions_px[:, 1]
+u = final_positions_px[:, 0] - initial_positions_px[:, 0] # change in x
+v = final_positions_px[:, 1] - initial_positions_px[:, 1] # change in y
 
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
