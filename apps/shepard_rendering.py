@@ -25,6 +25,7 @@ print('target shape:', target.shape) # used to confirm if image loaded has expec
 
 # Initialize N control points and colors randomly
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
+initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 loss_history = []
@@ -117,13 +118,35 @@ plt.savefig('results/shepard_rendering/final_labeled.png', bbox_inches='tight', 
 plt.close(fig) # Releases the figure from memory
 print('saved final_labeled.png')
 
+final_np = final.detach().clamp(0, 1).cpu().numpy()
+
+# -------------------------------------------------------------------
+# Quiver plot: direction each point moved, initial -> final
+# -------------------------------------------------------------------
+final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
+u = final_positions_px[:, 0] - initial_positions_px[:, 0]
+v = final_positions_px[:, 1] - initial_positions_px[:, 1]
+
+fig, ax = plt.subplots(figsize=(8, 8))
+ax.imshow(final_np, alpha=0.6)
+ax.quiver(initial_positions_px[:, 0], initial_positions_px[:, 1], u, v,
+          angles='xy', scale_units='xy', scale=1, color='red', width=0.003)
+ax.scatter(initial_positions_px[:, 0], initial_positions_px[:, 1], c='cyan', s=8, label='start')
+ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='end')
+ax.set_xlim(0, canvas_width)
+ax.set_ylim(canvas_height, 0)
+ax.legend(loc='upper right')
+ax.axis('off')
+plt.savefig('results/shepard_rendering/movement_quiver.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved movement_quiver.png')
+
 # -------------------------------------------------------------------
 # Per-pixel error heatmap
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
 
 target_np = target.cpu().numpy()
-final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # Per-pixel error: mean squared difference across RGB channels
 error_map = ((target_np - final_np) ** 2).mean(axis=2)

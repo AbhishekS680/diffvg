@@ -35,6 +35,7 @@ assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_
 background_color = degraded_np.reshape(-1, 3).mean(axis=0)  # single RGB value, head start
 
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)  # normalized [0,1]
+initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 colors = torch.tensor(background_color, dtype=torch.float32).unsqueeze(0).repeat(N, 1)
 colors = (colors + torch.rand_like(colors) * 0.05).clamp(0, 1).clone().requires_grad_(True)
 
@@ -122,12 +123,34 @@ plt.savefig('results/comparison_shepard/final_labeled.png', bbox_inches='tight',
 plt.close(fig)
 print('saved final_labeled.png')
 
+final_np = final.detach().clamp(0, 1).cpu().numpy()
+
+# -------------------------------------------------------------------
+# Quiver plot: direction each point moved, initial -> final
+# -------------------------------------------------------------------
+final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
+u = final_positions_px[:, 0] - initial_positions_px[:, 0]
+v = final_positions_px[:, 1] - initial_positions_px[:, 1]
+
+fig, ax = plt.subplots(figsize=(8, 8))
+ax.imshow(final_np, alpha=0.6)
+ax.quiver(initial_positions_px[:, 0], initial_positions_px[:, 1], u, v,
+          angles='xy', scale_units='xy', scale=1, color='red', width=0.003)
+ax.scatter(initial_positions_px[:, 0], initial_positions_px[:, 1], c='cyan', s=8, label='start')
+ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='end')
+ax.set_xlim(0, canvas_width)
+ax.set_ylim(canvas_height, 0)
+ax.legend(loc='upper right')
+ax.axis('off')
+plt.savefig('results/comparison_shepard/movement_quiver.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved movement_quiver.png')
+
 # -------------------------------------------------------------------
 # Per-pixel error heatmap (against the ORIGINAL)
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
 original_np = original.cpu().numpy()
-final_np = final.detach().clamp(0, 1).cpu().numpy()
 error_map = ((original_np - final_np) ** 2).mean(axis=2)
 im = ax.imshow(error_map, cmap='inferno')
 ax.axis('off')
