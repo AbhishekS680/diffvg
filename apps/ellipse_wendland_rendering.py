@@ -12,8 +12,8 @@ import os
 
 os.makedirs('results/ellipse_wendland_rendering', exist_ok=True)
 
-N = 50
-iters = 100
+N = 100
+iters = 250
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
