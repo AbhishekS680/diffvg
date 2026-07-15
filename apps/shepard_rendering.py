@@ -25,7 +25,6 @@ print('target shape:', target.shape) # used to confirm if image loaded has expec
 
 # Initialize N control points and colors randomly
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
-initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer   = torch.optim.Adam([positions_n, colors], lr=1e-2)
 loss_history = []
@@ -67,6 +66,9 @@ for t in range(iters):
         f.write(f'  color grad norms: {color_grad_norms.detach().numpy().tolist()}\n')
 
     optimizer.step() # Adam reads .grad → moves positions_n and colors
+
+    if t == iters - 2:
+        second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 
     # Helps the optimized parameters stay inside the bounds[0,1] after each optimizer.step()
     with torch.no_grad():
@@ -124,15 +126,15 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 # Quiver plot: direction each point moved, initial -> final
 # -------------------------------------------------------------------
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
-u = final_positions_px[:, 0] - initial_positions_px[:, 0]
-v = final_positions_px[:, 1] - initial_positions_px[:, 1]
+u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
+v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
 
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
-ax.quiver(initial_positions_px[:, 0], initial_positions_px[:, 1], u, v,
+ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
           angles='xy', scale_units='xy', scale=1, color='red', width=0.003)
-ax.scatter(initial_positions_px[:, 0], initial_positions_px[:, 1], c='cyan', s=8, label='start')
-ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='end')
+ax.scatter(second_last_positions_px[:, 0], second_last_positions_px[:, 1], c='cyan', s=8, label='second-to-last')
+ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='final')
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 ax.legend(loc='upper right')

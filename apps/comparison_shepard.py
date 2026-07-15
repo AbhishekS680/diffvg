@@ -14,9 +14,9 @@ os.makedirs('results/comparison_shepard', exist_ok=True)
 os.makedirs('results/comparison_shepard/error_only', exist_ok=True)
 os.makedirs('results/comparison_shepard/combined', exist_ok=True)
 
-N = 10
+N = 100
 q = 3.0
-iters = 25
+iters = 250
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
@@ -42,7 +42,6 @@ pydiffvg.imwrite((error_image * 0.5 + 0.5).clamp(0, 1).cpu(),
 
 # Init: random positions, colors near zero (additive correction)
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
-initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 colors = (torch.zeros(N, 3) + torch.rand(N, 3) * 0.05 - 0.025).clone().requires_grad_(True)
 
 optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
@@ -81,6 +80,10 @@ for t in range(iters):
         f.write(f'  color grad norms: {color_grad_norms.detach().numpy().tolist()}\n')
 
     optimizer.step()
+
+    if t == iters - 2:
+        second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
+
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(-1.0, 1.0)
@@ -136,15 +139,15 @@ print('saved final_labeled.png')
 
 # Quiver plot: direction each point moved
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
-u = final_positions_px[:, 0] - initial_positions_px[:, 0]
-v = final_positions_px[:, 1] - initial_positions_px[:, 1]
+u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
+v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
 
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
-ax.quiver(initial_positions_px[:, 0], initial_positions_px[:, 1], u, v,
+ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
           angles='xy', scale_units='xy', scale=1, color='red', width=0.003)
-ax.scatter(initial_positions_px[:, 0], initial_positions_px[:, 1], c='cyan', s=8, label='start')
-ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='end')
+ax.scatter(second_last_positions_px[:, 0], second_last_positions_px[:, 1], c='cyan', s=8, label='second-to-last')
+ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='final')
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 ax.legend(loc='upper right')
