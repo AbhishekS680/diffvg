@@ -27,6 +27,8 @@ print('original shape:', original.shape)
 degraded_np = skimage.io.imread('imgs/arch_blurry.jpg').astype(np.float32) / 255.0
 degraded_np = degraded_np[:, :, :3]
 pydiffvg.imwrite(torch.from_numpy(degraded_np), 'results/comparison_wendland/init_source_degraded.png', gamma=1.0)
+
+# Error check
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
 
@@ -38,7 +40,7 @@ initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canva
 colors = torch.tensor(background_color, dtype=torch.float32).unsqueeze(0).repeat(N, 1)
 colors = (colors + torch.rand_like(colors) * 0.05).clamp(0, 1).clone().requires_grad_(True)
 
-# Ellipses start as small circles, same convention as ellipse_wendland_rendering.py
+# Ellipses start as small circles
 log_a = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 log_b = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 theta = torch.zeros(N).clone().requires_grad_(True)
@@ -46,7 +48,7 @@ theta = torch.zeros(N).clone().requires_grad_(True)
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
 
-# --- Optimization loop: target is the ORIGINAL image, not the degraded one ---
+# --- Optimization loop ---
 for t in range(iters):
     optimizer.zero_grad()
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
