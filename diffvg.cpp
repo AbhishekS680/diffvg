@@ -1661,9 +1661,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                              int height) {
     const int N = field.num_points; // Number of ellipses
 
-    // Reused per-pixel storage: history of the accumulator's state after
-    // each ellipse, plus cached t/alpha_i, so backward doesn't need to
-    // recompute the whole forward pass for every ellipse (O(N) instead of O(N^2)).
+    // Reused per-pixel storage: history of the accumulator's state after each ellipse
     std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
     std::vector<float> hist_t(N), hist_alpha_i(N);
 
@@ -1673,8 +1671,8 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
             // Accumulator starts at background: black, alpha 0
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
             for (int i = 0; i < N; i++) { // Loop over every ellipse
-                float px = field.positions[i * 2 + 0];
-                float py = field.positions[i * 2 + 1];
+                float px = field.positions[i * 2 + 0]; // center x 
+                float py = field.positions[i * 2 + 1]; // center y
                 // Ellipse's two semi-axis lengths
                 float ai = field.a[i];
                 float bi = field.b[i];
@@ -1682,12 +1680,17 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 // How far away a pixel is from the ellipse center
                 float dx = x - px;
                 float dy = y - py;
+                // Un-rotate the pixel's offset so the ellipse looks axis-aligned
                 float cosT = cos(th);
                 float sinT = sin(th);
                 float dxp =  cosT * dx + sinT * dy;
                 float dyp = -sinT * dx + cosT * dy;
+                // Un-stretch it so the ellipse looks like a perfect circle
                 float u = dxp / ai;
                 float v = dyp / bi;
+
+                // Pythagorean theorem
+                // t <= 1 = pixel is inside ellipse, otherwise outside
                 float t = sqrt(u*u + v*v); // Distance from pixel to ellipse center, normalized in (u, v) space
 
                 float alpha_i = 0.0f; // Ellipse's opacity at the pixel, 0 if outside its influence
@@ -1695,21 +1698,21 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                     // Wendland kernel formula
                     float one_minus_t = 1.0f - t;
                     float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
-                    alpha_i = w;
+                    alpha_i = w; // Reassigned for clarity
 
                     // Ellipse's colour (red, green, blue)
                     float color_r = field.colours[i * 3 + 0];
                     float color_g = field.colours[i * 3 + 1];
                     float color_b = field.colours[i * 3 + 2];
 
-                    // Over-operator: composite ellipse i on top of accumulator so far
+                    // Over-operator
                     accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
                     accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
                     accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
                     accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
                 }
                 // Save the accumulator's state AFTER ellipse i, and cache t/alpha_i,
-                // whether or not this ellipse contributed (t >= 1.0f case just stores alpha_i = 0)
+                // whether or not this ellipse contributed
                 hist_r[i] = accum_r;
                 hist_g[i] = accum_g;
                 hist_b[i] = accum_b;
@@ -1764,8 +1767,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                         d_colours.get()[i * 3 + 2] += d_color_b;
                     }
 
-                    // Recompute the geometric quantities for ellipse i only (cheap —
-                    // this is O(1) per ellipse, not O(N) like the old j-loop was)
+                    // Recompute the geometric quantities for ellipse i only
                     float px = field.positions[i * 2 + 0];
                     float py = field.positions[i * 2 + 1];
                     float ai = field.a[i];
@@ -1782,7 +1784,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                     float one_minus_t = 1.0f - t;
                     float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
 
-                    // d_alpha_i feeds into the same dw/dt chain as before
+                    // d_alpha_i feeds into the same dw/dt chain
                     float dw_dt = -20.0f * t * one_minus_t3;
                     float dL_dt = d_alpha_i * dw_dt;
                     if (t > 1e-6f) {
