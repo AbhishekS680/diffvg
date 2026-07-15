@@ -24,7 +24,6 @@ pydiffvg.imwrite(target.cpu(), 'results/ellipse_wendland_rendering/target.png', 
 
 # Initialize N control points, colors, and ellipse shape parameters
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True) # normalized [0,1]
-initial_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 
 # Are log so they stay positive, start as a circle
@@ -53,6 +52,9 @@ for t in range(iters):
     print('b range:', b_current.min().item(), '-', b_current.max().item())
 
     optimizer.step()
+
+    if t == iters - 2:
+        second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
 
     with torch.no_grad():
         # forces parameters into valid ranges after Adam updated them
@@ -104,15 +106,15 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 # Quiver plot: direction each point moved, initial -> final
 # -------------------------------------------------------------------
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
-u = final_positions_px[:, 0] - initial_positions_px[:, 0] # change in x
-v = final_positions_px[:, 1] - initial_positions_px[:, 1] # change in y
+u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
+v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
 
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
-ax.quiver(initial_positions_px[:, 0], initial_positions_px[:, 1], u, v,
+ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
           angles='xy', scale_units='xy', scale=1, color='red', width=0.003)
-ax.scatter(initial_positions_px[:, 0], initial_positions_px[:, 1], c='cyan', s=8, label='start')
-ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='end')
+ax.scatter(second_last_positions_px[:, 0], second_last_positions_px[:, 1], c='cyan', s=8, label='second-to-last')
+ax.scatter(final_positions_px[:, 0], final_positions_px[:, 1], c='red', s=8, label='final')
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 ax.legend(loc='upper right')
