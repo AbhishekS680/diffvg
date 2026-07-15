@@ -1,7 +1,7 @@
 # single_ellipse_wendland.py
 # Optimize a single ellipse (N=1) using the
-# EllipseWendlandRenderFunction, to confirm the alpha-compositing
-# forward/backward math converges correctly with no occlusion involved.
+# EllipseWendlandRenderFunction
+
 import pydiffvg
 import torch
 import os
@@ -11,7 +11,7 @@ os.makedirs('results/single_ellipse_wendland', exist_ok=True)
 canvas_width, canvas_height = 256, 256
 iters = 200
 
-# ---- "True" ellipse: known parameters, used to generate the target image ----
+# ---- Known parameters, used to generate the target image ----
 true_position = torch.tensor([[128.0, 128.0]])
 true_a        = torch.tensor([60.0])
 true_b        = torch.tensor([30.0])
@@ -24,7 +24,7 @@ target = pydiffvg.EllipseWendlandRenderFunction.apply(
 pydiffvg.imwrite(target.cpu(), 'results/single_ellipse_wendland/target.png', gamma=1.0)
 
 # ---- Random initial guess ----
-# position normalized to [0,1], matching ellipse_wendland_rendering.py's convention
+# position normalized to [0,1]
 position_n = torch.tensor([[100.0 / canvas_width, 150.0 / canvas_height]], requires_grad=True)
 log_a    = torch.log(torch.tensor([20.0])).clone().requires_grad_(True)
 log_b    = torch.log(torch.tensor([40.0])).clone().requires_grad_(True)
