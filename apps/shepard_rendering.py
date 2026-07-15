@@ -10,9 +10,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-N = 30 # Number of control points
+N = 100 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 100
+iters = 250
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
