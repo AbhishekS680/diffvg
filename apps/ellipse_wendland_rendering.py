@@ -10,6 +10,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 
+import numpy as np
+from matplotlib.patches import Ellipse
+
 os.makedirs('results/ellipse_wendland_rendering', exist_ok=True)
 
 N = 100
@@ -88,9 +91,18 @@ pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/fi
 fig, ax = plt.subplots(figsize=(8, 8))
 display_img = final.detach().clamp(0, 1).cpu().numpy()
 ax.imshow(display_img)
-
 pos_np = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).cpu().numpy()
+a_np = a_px.detach().cpu().numpy()
+b_np = b_px.detach().cpu().numpy()
+theta_np = theta.detach().cpu().numpy()
+
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
+for idx, (x, y) in enumerate(pos_np):
+    ax.add_patch(Ellipse((x, y), width=2*a_np[idx], height=2*b_np[idx],
+                          angle=np.degrees(theta_np[idx]),
+                          facecolor='none', edgecolor='lime', linewidth=0.8))
+    ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
+                xytext=(3, 3), textcoords='offset points')
 
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)

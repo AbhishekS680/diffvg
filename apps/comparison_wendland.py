@@ -10,6 +10,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 
+from matplotlib.patches import Ellipse
+
 os.makedirs('results/comparison_wendland', exist_ok=True)
 os.makedirs('results/comparison_wendland/error_only', exist_ok=True)
 os.makedirs('results/comparison_wendland/combined', exist_ok=True)
@@ -116,10 +118,21 @@ pydiffvg.imwrite(final.detach().cpu(), 'results/comparison_wendland/final.png', 
 
 # Overlay control points on final render
 fig, ax = plt.subplots(figsize=(8, 8))
-final_np = final.detach().clamp(0, 1).cpu().numpy()
-ax.imshow(final_np)
+display_img = final.detach().clamp(0, 1).cpu().numpy()
+ax.imshow(display_img)
 pos_np = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).cpu().numpy()
+a_np = a_px.detach().cpu().numpy()
+b_np = b_px.detach().cpu().numpy()
+theta_np = theta.detach().cpu().numpy()
+
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
+for idx, (x, y) in enumerate(pos_np):
+    ax.add_patch(Ellipse((x, y), width=2*a_np[idx], height=2*b_np[idx],
+                          angle=np.degrees(theta_np[idx]),
+                          facecolor='none', edgecolor='lime', linewidth=0.8))
+    ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
+                xytext=(3, 3), textcoords='offset points')
+
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -127,6 +140,8 @@ ax.axis('off')
 plt.savefig('results/comparison_wendland/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
 plt.close(fig)
 print('saved final_labeled.png')
+
+final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # Quiver plot: direction each point moved
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
