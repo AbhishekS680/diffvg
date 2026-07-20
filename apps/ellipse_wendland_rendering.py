@@ -3,6 +3,7 @@
 # The kernel's influence isn't the same in every direction
 
 import pydiffvg
+import diffvg
 import torch
 import skimage.io
 import matplotlib
@@ -38,6 +39,8 @@ theta       = torch.zeros(N).clone().requires_grad_(True) # rotation, radians
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
 
+diffvg.reset_ellipse_wendland_timing()
+
 for t in range(iters):
     optimizer.zero_grad()
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
@@ -68,6 +71,14 @@ for t in range(iters):
         # theta is unclamped, rotation naturally wraps
 
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
+
+diffvg.print_ellipse_wendland_timing()
+
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_wendland_timing()
+with open('results/ellipse_wendland_rendering/timing.txt', 'w') as f:
+    f.write(f"render_ellipse_wendland timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 print(f'final loss: {loss.item():.4f}')
 

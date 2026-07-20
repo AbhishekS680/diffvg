@@ -2,6 +2,7 @@
 # Residual reconstruction: ellipses fit the signed error between original
 # and degraded, then get added on top of the degraded photo.
 import pydiffvg
+import diffvg
 import torch
 import skimage.io
 import numpy as np
@@ -51,6 +52,7 @@ theta = torch.zeros(N).clone().requires_grad_(True)
 
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
+diffvg.reset_ellipse_wendland_timing()
 
 # --- Optimization loop: fit ellipses to the error image ---
 for t in range(iters):
@@ -90,6 +92,13 @@ for t in range(iters):
     pydiffvg.imwrite(combined_preview.cpu(), 'results/comparison_wendland/combined/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
+
+diffvg.print_ellipse_wendland_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_wendland_timing()
+with open('results/comparison_wendland/timing.txt', 'w') as f:
+    f.write(f"render_ellipse_wendland timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 with open('results/comparison_wendland/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
