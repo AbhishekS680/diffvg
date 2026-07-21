@@ -2049,6 +2049,165 @@ void render_ellipse_poly(const EllipseWendlandField &field,
     }
 }
 
+// Anisotropic ellipse renderer using a fixed Gaussian RBF kernel
+// f(t) = exp(-t^2 / (2*sigma^2)), sigma fixed (not learnable).
+// sigma = 1/3 puts t=1 (ellipse edge) at 3 standard deviations, where
+// f(1) = exp(-4.5) ~= 0.011 -- close enough to 0 that the hard t<1
+// cutoff doesn't create a visible edge artifact.
+constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f;
+
+void render_ellipse_gaussian(const EllipseWendlandField &field,
+                             ptr<float> render_image,
+                             ptr<float> d_render_image,
+                             ptr<float> d_positions,
+                             ptr<float> d_colours,
+                             ptr<float> d_a,
+                             ptr<float> d_b,
+                             ptr<float> d_theta,
+                             int width,
+                             int height) {
+    const int N = field.num_points;
+    const float sigma2 = GAUSSIAN_SIGMA * GAUSSIAN_SIGMA;
+
+    std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
+    std::vector<float> hist_t(N), hist_alpha_i(N);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float ai = field.a[i];
+                float bi = field.b[i];
+                float th = field.theta[i];
+                float dx = x - px;
+                float dy = y - py;
+                float cosT = cos(th);
+                float sinT = sin(th);
+                float dxp =  cosT * dx + sinT * dy;
+                float dyp = -sinT * dx + cosT * dy;
+                float u = dxp / ai;
+                float v = dyp / bi;
+                float t = sqrt(u*u + v*v);
+
+                float alpha_i = 0.0f;
+                if (t < 1.0f) {
+                    // Gaussian RBF kernel
+                    float w = exp(-(t*t) / (2.0f * sigma2));
+                    alpha_i = w;
+
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                    accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                    accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                    accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+                }
+                hist_r[i] = accum_r;
+                hist_g[i] = accum_g;
+                hist_b[i] = accum_b;
+                hist_alpha[i] = accum_alpha;
+                hist_t[i] = t;
+                hist_alpha_i[i] = alpha_i;
+            }
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
+            }
+
+            if (d_render_image.get() != nullptr) {
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f;
+
+                for (int i = N - 1; i >= 0; i--) {
+                    float t = hist_t[i];
+                    if (t >= 1.0f) continue;
+
+                    float alpha_i = hist_alpha_i[i];
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    float prev_r     = (i > 0) ? hist_r[i - 1]     : 0.0f;
+                    float prev_g     = (i > 0) ? hist_g[i - 1]     : 0.0f;
+                    float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
+                    float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
+
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float ai = field.a[i];
+                    float bi = field.b[i];
+                    float th = field.theta[i];
+                    float dx = x - px;
+                    float dy = y - py;
+                    float cosT = cos(th);
+                    float sinT = sin(th);
+                    float dxp =  cosT * dx + sinT * dy;
+                    float dyp = -sinT * dx + cosT * dy;
+                    float u = dxp / ai;
+                    float v = dyp / bi;
+
+                    // dw/dt = -(t/sigma^2) * w   (w == alpha_i, already computed)
+                    float dw_dt = -(t / sigma2) * alpha_i;
+                    float dL_dt = d_alpha_i * dw_dt;
+
+                    if (t > 1e-6f) {
+                        float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
+                        float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
+                        if (d_positions.get() != nullptr) {
+                            d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
+                            d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
+                        }
+                        if (d_a.get() != nullptr) {
+                            float dt_da = -(u*u) / (t * ai);
+                            d_a.get()[i] += dL_dt * dt_da;
+                        }
+                        if (d_b.get() != nullptr) {
+                            float dt_db = -(v*v) / (t * bi);
+                            d_b.get()[i] += dL_dt * dt_db;
+                        }
+                        if (d_theta.get() != nullptr) {
+                            float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
+                            d_theta.get()[i] += dL_dt * dt_dtheta;
+                        }
+                    }
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
@@ -2094,6 +2253,7 @@ PYBIND11_MODULE(diffvg, m) {
     m.def("reset_ellipse_wendland_timing", &reset_ellipse_wendland_timing, "");
     m.def("print_ellipse_wendland_timing", &print_ellipse_wendland_timing, "");
     m.def("get_ellipse_wendland_timing", &get_ellipse_wendland_timing, "");
+    m.def("render_ellipse_gaussian", &render_ellipse_gaussian, "");
 
     py::class_<Circle>(m, "Circle")
         .def(py::init<float, Vector2f>())
