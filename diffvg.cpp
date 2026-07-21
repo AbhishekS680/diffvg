@@ -1861,6 +1861,194 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
     }
 }
 
+// Anisotropic ellipse renderer using a learnable global polynomial kernel:
+// f(t) = coeffs[0]*t^4 + coeffs[1]*t^3 + coeffs[2]*t^2 + coeffs[3]*t + coeffs[4]
+void render_ellipse_poly(const EllipseWendlandField &field,
+                         ptr<float> coeffs, // [a, b, c, d, e], size 5
+                         ptr<float> render_image,
+                         ptr<float> d_render_image,
+                         ptr<float> d_positions,
+                         ptr<float> d_colours,
+                         ptr<float> d_a,
+                         ptr<float> d_b,
+                         ptr<float> d_theta,
+                         ptr<float> d_coeffs, // size 5, gradient accumulator
+                         int width,
+                         int height) {
+    const int N = field.num_points;
+
+    float a_coeff = coeffs.get()[0];
+    float b_coeff = coeffs.get()[1];
+    float c_coeff = coeffs.get()[2];
+    float d_coeff = coeffs.get()[3];
+    float e_coeff = coeffs.get()[4];
+
+    // per-pixel storage: history of the accumulator's state after each ellipse
+    std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
+    std::vector<float> hist_t(N), hist_alpha_i(N);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float ai = field.a[i];
+                float bi = field.b[i];
+                float th = field.theta[i];
+                float dx = x - px;
+                float dy = y - py;
+                float cosT = cos(th);
+                float sinT = sin(th);
+                float dxp =  cosT * dx + sinT * dy;
+                float dyp = -sinT * dx + cosT * dy;
+                float u = dxp / ai;
+                float v = dyp / bi;
+                float t = sqrt(u*u + v*v);
+
+                float alpha_i = 0.0f;
+                if (t < 1.0f) {
+                    // Polynomial kernel: f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e
+                    float t2 = t * t;
+                    float t3 = t2 * t;
+                    float t4 = t3 * t;
+                    float f = a_coeff*t4 + b_coeff*t3 + c_coeff*t2 + d_coeff*t + e_coeff;
+                    // Clamp for valid opacity, this polynomial has no built-in guarantee of hitting 0 at t=1.
+                    alpha_i = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                    accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                    accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                    accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+                }
+                hist_r[i] = accum_r;
+                hist_g[i] = accum_g;
+                hist_b[i] = accum_b;
+                hist_alpha[i] = accum_alpha;
+                hist_t[i] = t;
+                hist_alpha_i[i] = alpha_i;
+            }
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
+            }
+
+            // ---------- Backward pass ----------
+            if (d_render_image.get() != nullptr) {
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f;
+
+                for (int i = N - 1; i >= 0; i--) {
+                    float t = hist_t[i];
+                    if (t >= 1.0f) continue;
+
+                    float alpha_i = hist_alpha_i[i];
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    float prev_r     = (i > 0) ? hist_r[i - 1]     : 0.0f;
+                    float prev_g     = (i > 0) ? hist_g[i - 1]     : 0.0f;
+                    float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
+                    float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
+
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    // Recompute geometry + raw (pre-clamp) f for this ellipse
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float ai = field.a[i];
+                    float bi = field.b[i];
+                    float th = field.theta[i];
+                    float dx = x - px;
+                    float dy = y - py;
+                    float cosT = cos(th);
+                    float sinT = sin(th);
+                    float dxp =  cosT * dx + sinT * dy;
+                    float dyp = -sinT * dx + cosT * dy;
+                    float u = dxp / ai;
+                    float v = dyp / bi;
+                    float t2 = t * t;
+                    float t3 = t2 * t;
+                    float t4 = t3 * t;
+                    float f_raw = a_coeff*t4 + b_coeff*t3 + c_coeff*t2 + d_coeff*t + e_coeff;
+
+                    // Gradient only flows through if we're in the unclamped region
+                    bool clamped = (f_raw < 0.0f) || (f_raw > 1.0f);
+
+                    if (!clamped) {
+                        // d(alpha)/d(coeff_j) = t^4, t^3, t^2, t^1, t^0
+                        if (d_coeffs.get() != nullptr) {
+                            d_coeffs.get()[0] += d_alpha_i * t4;
+                            d_coeffs.get()[1] += d_alpha_i * t3;
+                            d_coeffs.get()[2] += d_alpha_i * t2;
+                            d_coeffs.get()[3] += d_alpha_i * t;
+                            d_coeffs.get()[4] += d_alpha_i;
+                        }
+
+                        // dw/dt = 4a*t^3 + 3b*t^2 + 2c*t + d
+                        float dw_dt = 4.0f*a_coeff*t3 + 3.0f*b_coeff*t2 + 2.0f*c_coeff*t + d_coeff;
+                        float dL_dt = d_alpha_i * dw_dt;
+
+                        if (t > 1e-6f) {
+                            float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
+                            float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
+                            if (d_positions.get() != nullptr) {
+                                d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
+                                d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
+                            }
+                            if (d_a.get() != nullptr) {
+                                float dt_da = -(u*u) / (t * ai);
+                                d_a.get()[i] += dL_dt * dt_da;
+                            }
+                            if (d_b.get() != nullptr) {
+                                float dt_db = -(v*v) / (t * bi);
+                                d_b.get()[i] += dL_dt * dt_db;
+                            }
+                            if (d_theta.get() != nullptr) {
+                                float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
+                                d_theta.get()[i] += dL_dt * dt_dtheta;
+                            }
+                        }
+                    }
+                    // If clamped: no gradient flows anywhere for this ellipse at this pixel
+                    // Position/a/b/theta/coeffs all get 0 contribution here, matching hard-clamp semantics.
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
@@ -1902,6 +2090,7 @@ PYBIND11_MODULE(diffvg, m) {
         .def_readonly("num_points", &EllipseWendlandField::num_points);
 
     m.def("render_ellipse_wendland", &render_ellipse_wendland, "");
+    m.def("render_ellipse_poly", &render_ellipse_poly, "");
     m.def("reset_ellipse_wendland_timing", &reset_ellipse_wendland_timing, "");
     m.def("print_ellipse_wendland_timing", &print_ellipse_wendland_timing, "");
     m.def("get_ellipse_wendland_timing", &get_ellipse_wendland_timing, "");
