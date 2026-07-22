@@ -17,7 +17,7 @@ os.makedirs('results/comparison_wendland', exist_ok=True)
 os.makedirs('results/comparison_wendland/error_only', exist_ok=True)
 os.makedirs('results/comparison_wendland/combined', exist_ok=True)
 
-N = 100  # Number of ellipses
+N = 1000  # Number of ellipses
 iters = 250
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
