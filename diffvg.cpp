@@ -2050,11 +2050,7 @@ void render_ellipse_poly(const EllipseWendlandField &field,
 }
 
 // Anisotropic ellipse renderer using a fixed Gaussian RBF kernel
-// f(t) = exp(-t^2 / (2*sigma^2)), sigma fixed (not learnable).
-// sigma = 1/3 puts t=1 (ellipse edge) at 3 standard deviations, where
-// f(1) = exp(-4.5) ~= 0.011 -- close enough to 0 that the hard t<1
-// cutoff doesn't create a visible edge artifact.
-constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f;
+constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f; // How quickly opacity fades as you move away from the ellipse center
 
 void render_ellipse_gaussian(const EllipseWendlandField &field,
                              ptr<float> render_image,
