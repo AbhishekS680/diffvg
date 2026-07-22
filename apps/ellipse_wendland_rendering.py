@@ -16,7 +16,7 @@ from matplotlib.patches import Ellipse
 
 os.makedirs('results/ellipse_wendland_rendering', exist_ok=True)
 
-N = 100
+N = 1000
 iters = 250
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
