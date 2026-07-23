@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-N = 100 # Number of control points
+N = 1000 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
 iters = 250
 
