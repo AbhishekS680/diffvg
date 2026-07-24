@@ -13,7 +13,7 @@ import os
 import numpy as np
 from matplotlib.patches import Ellipse
 
-os.makedirs('results/gaussian_kernel_rendering', exist_ok=True)
+os.makedirs('results/gaussian_rendering', exist_ok=True)
 
 N = 1000
 iters = 250
@@ -23,7 +23,7 @@ pydiffvg.set_use_gpu(torch.cuda.is_available())
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
-pydiffvg.imwrite(target.cpu(), 'results/gaussian_kernel_rendering/target.png', gamma=1.0)
+pydiffvg.imwrite(target.cpu(), 'results/gaussian_rendering/target.png', gamma=1.0)
 
 # Same convention as ellipse_wendland_rendering.py
 positions_n = torch.rand(N, 2).clone().requires_grad_(True)   # normalized [0,1]
@@ -66,15 +66,15 @@ for t in range(iters):
         # theta unclamped, rotation wraps naturally
 
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
-                      'results/gaussian_kernel_rendering/iter_{}.png'.format(t), gamma=1.0)
+                      'results/gaussian_rendering/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
-with open('results/gaussian_kernel_rendering/final_loss.txt', 'w') as f:
+with open('results/gaussian_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
 
 diffvg.print_ellipse_gaussian_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_gaussian_timing()
-with open('results/gaussian_kernel_rendering/timing.txt', 'w') as f:
+with open('results/gaussian_rendering/timing.txt', 'w') as f:
     f.write(f"render_ellipse_gaussian timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
     f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
     f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
@@ -87,7 +87,7 @@ ax.plot(loss_history)
 ax.set_xlabel('Iteration')
 ax.set_ylabel('Loss')
 ax.set_title(f'Convergence (N={N}, Gaussian RBF kernel)')
-plt.savefig('results/gaussian_kernel_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/gaussian_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
 
@@ -108,7 +108,7 @@ ax.set_xlabel('t (normalized distance from ellipse center)')
 ax.set_ylabel('alpha (opacity)')
 ax.set_title('Gaussian kernel shape vs Wendland reference')
 ax.legend()
-plt.savefig('results/gaussian_kernel_rendering/kernel_shape_comparison.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/gaussian_rendering/kernel_shape_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved kernel_shape_comparison.png')
 
@@ -120,7 +120,7 @@ a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
 final = pydiffvg.EllipseGaussianRenderFunction.apply(
     positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
-pydiffvg.imwrite(final.detach().clamp(0, 1).cpu(), 'results/gaussian_kernel_rendering/final.png', gamma=1.0)
+pydiffvg.imwrite(final.detach().clamp(0, 1).cpu(), 'results/gaussian_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------
 # Labeled ellipses with edges
@@ -145,7 +145,7 @@ ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 ax.axis('off')
-plt.savefig('results/gaussian_kernel_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
+plt.savefig('results/gaussian_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
 plt.close(fig)
 print('saved final_labeled.png')
 
@@ -168,7 +168,7 @@ ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 ax.legend(loc='upper right')
 ax.axis('off')
-plt.savefig('results/gaussian_kernel_rendering/movement_quiver.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/gaussian_rendering/movement_quiver.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved movement_quiver.png')
 
@@ -181,7 +181,7 @@ error_map = ((target_np - final_np) ** 2).mean(axis=2)
 im = ax.imshow(error_map, cmap='inferno')
 ax.axis('off')
 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-plt.savefig('results/gaussian_kernel_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/gaussian_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved error_heatmap.png')
 
@@ -196,11 +196,11 @@ im = axes[2].imshow(error_map, cmap='inferno')
 axes[2].set_title('Error heatmap')
 axes[2].axis('off')
 fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
-plt.savefig('results/gaussian_kernel_rendering/all_comparison.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/gaussian_rendering/all_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved all_comparison.png')
 
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
-    "results/gaussian_kernel_rendering/iter_%d.png", "-vb", "20M",
-    "results/gaussian_kernel_rendering/out.mp4"])
+    "results/gaussian_rendering/iter_%d.png", "-vb", "20M",
+    "results/gaussian_rendering/out.mp4"])
