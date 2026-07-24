@@ -9,12 +9,13 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
+import diffvg
 
 os.makedirs('results/comparison_shepard', exist_ok=True)
 os.makedirs('results/comparison_shepard/error_only', exist_ok=True)
 os.makedirs('results/comparison_shepard/combined', exist_ok=True)
 
-N = 100
+N = 1000
 q = 3.0
 iters = 250
 
@@ -48,6 +49,7 @@ optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
 loss_history = []
 
 open('results/comparison_shepard/gradient_log.txt', 'w').close()
+diffvg.reset_shepard_timing()
 
 # --- Optimization loop: fit points to the error image ---
 for t in range(iters):
@@ -97,9 +99,14 @@ for t in range(iters):
     pydiffvg.imwrite(combined_preview.cpu(), 'results/comparison_shepard/combined/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
-
 with open('results/comparison_shepard/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+diffvg.print_shepard_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_shepard_timing()
+with open('results/comparison_shepard/timing.txt', 'w') as f:
+    f.write(f"render_shepard timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)

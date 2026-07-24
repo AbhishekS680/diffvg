@@ -12,11 +12,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.cluster import MeanShift
 import os
+import diffvg
 
 # --- Parameters ---
-N_per_segment = 10 # control points per segment
+N_per_segment = 100 # control points per segment
 q = 3.0
-iters = 100
+iters = 250
 seg_size = 0.2 # controls segment size, a larger value means fewer but bigger segments
 
 # --- Load target image ---
@@ -69,6 +70,7 @@ print('Saved individual segments')
 
 # --- Run Shepard optimization per segment ---
 print('Running per-segment Shepard optimization...')
+diffvg.reset_shepard_timing()
 final_image = np.zeros_like(target_np) # Starts off as empty, but the segments will be written on it
 target_tensor = torch.from_numpy(target_np)
 
@@ -149,6 +151,13 @@ for seg_id in range(n_segments):
 final_tensor = torch.from_numpy(final_image.astype(np.float32))
 pydiffvg.imwrite(final_tensor, 'results/shepard_segmented/final.png', gamma=1.0)
 print('saved final.png')
+
+diffvg.print_shepard_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_shepard_timing()
+with open('results/shepard_segmented/timing.txt', 'w') as f:
+    f.write(f"render_shepard timing (N_per_segment={N_per_segment}, {n_segments} segments, {iters} iters/segment, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 # -----------------------------
 # Plot final loss per segment
