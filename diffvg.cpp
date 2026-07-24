@@ -21,6 +21,7 @@
 #include <pybind11/stl.h>
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
+#include <chrono>
 
 namespace py = pybind11;
 
@@ -1648,6 +1649,32 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+// Timing accumulators for render_shepard (forward/backward)
+static double g_shepard_forward_time_ms = 0.0;
+static double g_shepard_backward_time_ms = 0.0;
+static long long g_shepard_forward_pixel_calls = 0;
+static long long g_shepard_backward_pixel_calls = 0;
+
+void reset_shepard_timing() {
+    g_shepard_forward_time_ms = 0.0;
+    g_shepard_backward_time_ms = 0.0;
+    g_shepard_forward_pixel_calls = 0;
+    g_shepard_backward_pixel_calls = 0;
+}
+void print_shepard_timing() {
+    printf("---- render_shepard timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_shepard_forward_time_ms, g_shepard_forward_pixel_calls,
+           g_shepard_forward_pixel_calls > 0 ? g_shepard_forward_time_ms / g_shepard_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_shepard_backward_time_ms, g_shepard_backward_pixel_calls,
+           g_shepard_backward_pixel_calls > 0 ? g_shepard_backward_time_ms / g_shepard_backward_pixel_calls : 0.0);
+}
+py::tuple get_shepard_timing() {
+    return py::make_tuple(g_shepard_forward_time_ms, g_shepard_forward_pixel_calls,
+                           g_shepard_backward_time_ms, g_shepard_backward_pixel_calls);
+}
+
 // Shepard field renderer
 // Forward pass: for each pixel, compute IDW-weighted color sum across N control points
 // Backward pass: accumulate gradients w.r.t. positions and colours
@@ -1667,6 +1694,7 @@ void render_shepard(const ShepardField &field,
             float total_weight = 0.0;
             float r = 0.0, g = 0.0, b = 0.0;
             bool hit = false; // Becomes true when a pixel lands directly on a control point, no gradient needed
+            auto fwd_start = std::chrono::high_resolution_clock::now();
 
             for (int i = 0; i < N; i++) {
                 float px = field.positions[i * 2 + 0];
@@ -1691,12 +1719,16 @@ void render_shepard(const ShepardField &field,
                 total_weight += weight;
             }
 
-                // Normalize the values
-                if (total_weight > 0.0) {
-                    r /= total_weight;
-                    g /= total_weight;
-                    b /= total_weight;
-                }
+            // Normalize the values
+            if (total_weight > 0.0) {
+                r /= total_weight;
+                g /= total_weight;
+                b /= total_weight;
+            }
+
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_shepard_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_shepard_forward_pixel_calls++;
 
             int index = (y * width + x) * 3; // Find the index of the pixel in the array using the formula
 
@@ -1709,6 +1741,8 @@ void render_shepard(const ShepardField &field,
             // Backward pass (How wrong is the image and why)
             // Reads the image by the forward pass
             if (d_render_image.get() != nullptr && !hit && total_weight > 0.0) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
+
                 float grad_r = d_render_image.get()[index + 0]; // Reads the incoming gradient; computed by PyTorch before calling render_shepard backward
                 float grad_g = d_render_image.get()[index + 1];
                 float grad_b = d_render_image.get()[index + 2];
@@ -1748,6 +1782,9 @@ void render_shepard(const ShepardField &field,
                         
                     }
                 }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_shepard_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_shepard_backward_pixel_calls++;
             }
         }
     }
@@ -1903,6 +1940,9 @@ PYBIND11_MODULE(diffvg, m) {
         .def_readonly("q", &ShepardField::q);
 
     m.def("render_shepard", &render_shepard, "");
+    m.def("reset_shepard_timing", &reset_shepard_timing, "");
+    m.def("print_shepard_timing", &print_shepard_timing, "");
+    m.def("get_shepard_timing", &get_shepard_timing, "");
 
     m.def("render", &render, "");
 }

@@ -10,6 +10,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import diffvg
+
 N = 1000 # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
 iters = 250
@@ -31,6 +33,7 @@ loss_history = []
 
 # Clear old gradient log before a fresh run
 open('results/shepard_rendering/gradient_log.txt', 'w').close()
+diffvg.reset_shepard_timing()
 
 # Run Adam iterations.
 for t in range(iters):
@@ -78,6 +81,13 @@ for t in range(iters):
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/shepard_rendering/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
+
+diffvg.print_shepard_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_shepard_timing()
+with open('results/shepard_rendering/timing.txt', 'w') as f:
+    f.write(f"render_shepard timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 # --------------------------------------
 # Plot loss convergence over iterations.
