@@ -13,8 +13,8 @@ enum class ShapeType {
     Rect
 };
 
-struct EllipseWendlandField {
-    EllipseWendlandField(ptr<float> positions,
+struct EllipseGaussianField {
+    EllipseGaussianField(ptr<float> positions,
                           ptr<float> colours,
                           ptr<float> a,
                           ptr<float> b,

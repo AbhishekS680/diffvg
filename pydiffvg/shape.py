@@ -9,7 +9,7 @@ class Circle:
         self.stroke_width = stroke_width
         self.id = id
         
-class EllipseWendlandField:
+class EllipseGaussianField:
     def __init__(self, positions, colours, a, b, theta):
         self.positions = positions
         self.colours = colours
