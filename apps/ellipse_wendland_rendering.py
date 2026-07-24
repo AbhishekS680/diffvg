@@ -72,6 +72,8 @@ for t in range(iters):
 
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
 
+print(f'final loss: {loss.item():.4f}')
+
 # Write timing results to a text file
 diffvg.print_ellipse_wendland_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_wendland_timing()
@@ -79,8 +81,6 @@ with open('results/ellipse_wendland_rendering/timing.txt', 'w') as f:
     f.write(f"render_ellipse_wendland timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
     f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
     f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
-
-print(f'final loss: {loss.item():.4f}')
 
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)

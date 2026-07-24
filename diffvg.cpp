@@ -22,6 +22,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 #include <vector>
+#include <chrono>
 
 namespace py = pybind11;
 
@@ -1649,8 +1650,6 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
-#include <chrono>
-
 // Timing accumulators for render_ellipse_wendland (forward/backward)
 static double g_ellipse_forward_time_ms = 0.0;
 static double g_ellipse_backward_time_ms = 0.0;
@@ -1861,6 +1860,31 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
     }
 }
 
+// Timing accumulators for render_ellipse_poly (forward/backward)
+static double g_ellipse_poly_forward_time_ms = 0.0;
+static double g_ellipse_poly_backward_time_ms = 0.0;
+static long long g_ellipse_poly_forward_pixel_calls = 0;
+static long long g_ellipse_poly_backward_pixel_calls = 0;
+void reset_ellipse_poly_timing() {
+    g_ellipse_poly_forward_time_ms = 0.0;
+    g_ellipse_poly_backward_time_ms = 0.0;
+    g_ellipse_poly_forward_pixel_calls = 0;
+    g_ellipse_poly_backward_pixel_calls = 0;
+}
+void print_ellipse_poly_timing() {
+    printf("---- render_ellipse_poly timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_poly_forward_time_ms, g_ellipse_poly_forward_pixel_calls,
+           g_ellipse_poly_forward_pixel_calls > 0 ? g_ellipse_poly_forward_time_ms / g_ellipse_poly_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_poly_backward_time_ms, g_ellipse_poly_backward_pixel_calls,
+           g_ellipse_poly_backward_pixel_calls > 0 ? g_ellipse_poly_backward_time_ms / g_ellipse_poly_backward_pixel_calls : 0.0);
+}
+py::tuple get_ellipse_poly_timing() {
+    return py::make_tuple(g_ellipse_poly_forward_time_ms, g_ellipse_poly_forward_pixel_calls,
+                           g_ellipse_poly_backward_time_ms, g_ellipse_poly_backward_pixel_calls);
+}
+
 // Anisotropic ellipse renderer using a learnable global polynomial kernel:
 // f(t) = coeffs[0]*t^4 + coeffs[1]*t^3 + coeffs[2]*t^2 + coeffs[3]*t + coeffs[4]
 void render_ellipse_poly(const EllipseWendlandField &field,
@@ -1890,6 +1914,7 @@ void render_ellipse_poly(const EllipseWendlandField &field,
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            auto fwd_start = std::chrono::high_resolution_clock::now();
 
             for (int i = 0; i < N; i++) {
                 float px = field.positions[i * 2 + 0];
@@ -1934,6 +1959,10 @@ void render_ellipse_poly(const EllipseWendlandField &field,
                 hist_alpha_i[i] = alpha_i;
             }
 
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_ellipse_poly_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_ellipse_poly_forward_pixel_calls++;
+
             int index = (y * width + x) * 3;
             if (render_image.get() != nullptr) {
                 render_image.get()[index + 0] = accum_r;
@@ -1943,6 +1972,7 @@ void render_ellipse_poly(const EllipseWendlandField &field,
 
             // ---------- Backward pass ----------
             if (d_render_image.get() != nullptr) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
                 float d_curr_r = d_render_image.get()[index + 0];
                 float d_curr_g = d_render_image.get()[index + 1];
                 float d_curr_b = d_render_image.get()[index + 2];
@@ -2044,6 +2074,9 @@ void render_ellipse_poly(const EllipseWendlandField &field,
                     d_curr_b = d_prev_b;
                     d_curr_alpha = d_prev_alpha;
                 }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_ellipse_poly_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_ellipse_poly_backward_pixel_calls++;
             }
         }
     }
@@ -2090,10 +2123,14 @@ PYBIND11_MODULE(diffvg, m) {
         .def_readonly("num_points", &EllipseWendlandField::num_points);
 
     m.def("render_ellipse_wendland", &render_ellipse_wendland, "");
-    m.def("render_ellipse_poly", &render_ellipse_poly, "");
     m.def("reset_ellipse_wendland_timing", &reset_ellipse_wendland_timing, "");
     m.def("print_ellipse_wendland_timing", &print_ellipse_wendland_timing, "");
     m.def("get_ellipse_wendland_timing", &get_ellipse_wendland_timing, "");
+
+    m.def("render_ellipse_poly", &render_ellipse_poly, "");
+    m.def("reset_ellipse_poly_timing", &reset_ellipse_poly_timing, "");
+    m.def("print_ellipse_poly_timing", &print_ellipse_poly_timing, "");
+    m.def("get_ellipse_poly_timing", &get_ellipse_poly_timing, "");
 
     py::class_<Circle>(m, "Circle")
         .def(py::init<float, Vector2f>())

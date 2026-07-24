@@ -42,6 +42,7 @@ optimizer = torch.optim.Adam([
 ], )
 loss_history = []
 coeff_history = []
+diffvg.reset_ellipse_poly_timing()
 
 for t in range(iters):
     optimizer.zero_grad()
@@ -85,6 +86,13 @@ with open('results/polynomial_kernel_rendering/final_coeffs.txt', 'w') as f:
         f.write(f'{name}: {val:.6f}\n')
 with open('results/polynomial_kernel_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+
+diffvg.print_ellipse_poly_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_poly_timing()
+with open('results/polynomial_kernel_rendering/timing.txt', 'w') as f:
+    f.write(f"render_ellipse_poly timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 # -------------------------------------------------------------------
 # Loss curve
