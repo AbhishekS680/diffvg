@@ -34,6 +34,7 @@ theta       = torch.zeros(N).clone().requires_grad_(True)
 
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
+diffvg.reset_ellipse_gaussian_timing()
 
 for t in range(iters):
     optimizer.zero_grad()
@@ -70,6 +71,13 @@ for t in range(iters):
 print(f'final loss: {loss.item():.4f}')
 with open('results/gaussian_kernel_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+
+diffvg.print_ellipse_gaussian_timing()
+fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_gaussian_timing()
+with open('results/gaussian_kernel_rendering/timing.txt', 'w') as f:
+    f.write(f"render_ellipse_gaussian timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
+    f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
+    f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
 
 # -------------------------------------------------------------------
 # Loss curve

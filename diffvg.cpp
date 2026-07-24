@@ -22,6 +22,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 #include <vector>
+#include <chrono>
 
 namespace py = pybind11;
 
@@ -1649,6 +1650,31 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+// Timing accumulators for render_ellipse_gaussian (forward/backward)
+static double g_ellipse_gaussian_forward_time_ms = 0.0;
+static double g_ellipse_gaussian_backward_time_ms = 0.0;
+static long long g_ellipse_gaussian_forward_pixel_calls = 0;
+static long long g_ellipse_gaussian_backward_pixel_calls = 0;
+void reset_ellipse_gaussian_timing() {
+    g_ellipse_gaussian_forward_time_ms = 0.0;
+    g_ellipse_gaussian_backward_time_ms = 0.0;
+    g_ellipse_gaussian_forward_pixel_calls = 0;
+    g_ellipse_gaussian_backward_pixel_calls = 0;
+}
+void print_ellipse_gaussian_timing() {
+    printf("---- render_ellipse_gaussian timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_gaussian_forward_time_ms, g_ellipse_gaussian_forward_pixel_calls,
+           g_ellipse_gaussian_forward_pixel_calls > 0 ? g_ellipse_gaussian_forward_time_ms / g_ellipse_gaussian_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_gaussian_backward_time_ms, g_ellipse_gaussian_backward_pixel_calls,
+           g_ellipse_gaussian_backward_pixel_calls > 0 ? g_ellipse_gaussian_backward_time_ms / g_ellipse_gaussian_backward_pixel_calls : 0.0);
+}
+py::tuple get_ellipse_gaussian_timing() {
+    return py::make_tuple(g_ellipse_gaussian_forward_time_ms, g_ellipse_gaussian_forward_pixel_calls,
+                           g_ellipse_gaussian_backward_time_ms, g_ellipse_gaussian_backward_pixel_calls);
+}
+
 // Anisotropic ellipse renderer using a fixed Gaussian RBF kernel
 constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f; // How quickly opacity fades as you move away from the ellipse center
 
@@ -1671,7 +1697,9 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            auto fwd_start = std::chrono::high_resolution_clock::now();
 
+            // Forward Pass
             for (int i = 0; i < N; i++) {
                 float px = field.positions[i * 2 + 0];
                 float py = field.positions[i * 2 + 1];
@@ -1711,6 +1739,10 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
                 hist_alpha_i[i] = alpha_i;
             }
 
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_ellipse_gaussian_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_ellipse_gaussian_forward_pixel_calls++;
+
             int index = (y * width + x) * 3;
             if (render_image.get() != nullptr) {
                 render_image.get()[index + 0] = accum_r;
@@ -1718,7 +1750,9 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
                 render_image.get()[index + 2] = accum_b;
             }
 
+            // Backward Pass
             if (d_render_image.get() != nullptr) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
                 float d_curr_r = d_render_image.get()[index + 0];
                 float d_curr_g = d_render_image.get()[index + 1];
                 float d_curr_b = d_render_image.get()[index + 2];
@@ -1799,6 +1833,9 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
                     d_curr_b = d_prev_b;
                     d_curr_alpha = d_prev_alpha;
                 }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_ellipse_gaussian_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_ellipse_gaussian_backward_pixel_calls++;
             }
         }
     }
@@ -1840,6 +1877,9 @@ PYBIND11_MODULE(diffvg, m) {
         .value("rect", ShapeType::Rect);
 
     m.def("render_ellipse_gaussian", &render_ellipse_gaussian, "");
+    m.def("reset_ellipse_gaussian_timing", &reset_ellipse_gaussian_timing, "");
+    m.def("print_ellipse_gaussian_timing", &print_ellipse_gaussian_timing, "");
+    m.def("get_ellipse_gaussian_timing", &get_ellipse_gaussian_timing, "");
 
     py::class_<Circle>(m, "Circle")
         .def(py::init<float, Vector2f>())
