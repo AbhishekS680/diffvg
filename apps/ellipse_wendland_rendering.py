@@ -72,9 +72,8 @@ for t in range(iters):
 
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/ellipse_wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
 
-diffvg.print_ellipse_wendland_timing()
-
 # Write timing results to a text file
+diffvg.print_ellipse_wendland_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_wendland_timing()
 with open('results/ellipse_wendland_rendering/timing.txt', 'w') as f:
     f.write(f"render_ellipse_wendland timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")

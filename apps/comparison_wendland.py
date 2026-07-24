@@ -93,6 +93,7 @@ for t in range(iters):
 
 print(f'final loss: {loss.item():.4f}')
 
+# Write timing results to a text file
 diffvg.print_ellipse_wendland_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_wendland_timing()
 with open('results/comparison_wendland/timing.txt', 'w') as f:
