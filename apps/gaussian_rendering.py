@@ -1,4 +1,4 @@
-# gaussian_kernel_rendering.py
+# gaussian_rendering.py
 # Anisotropic ellipse renderer using a fixed Gaussian RBF kernel:
 #   f(t) = exp(-t^2 / (2*sigma^2)), sigma = 1/3 (fixed in diffvg.cpp, not learnable)
 
