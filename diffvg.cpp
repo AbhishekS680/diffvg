@@ -1876,6 +1876,11 @@ PYBIND11_MODULE(diffvg, m) {
         .value("path", ShapeType::Path)
         .value("rect", ShapeType::Rect);
 
+    py::class_<EllipseGaussianField>(m, "EllipseGaussianField")
+        .def(py::init<ptr<float>, ptr<float>, ptr<float>, ptr<float>, ptr<float>, int>())
+        .def("get_ptr", &EllipseGaussianField::get_ptr)
+        .def_readonly("num_points", &EllipseGaussianField::num_points);
+
     m.def("render_ellipse_gaussian", &render_ellipse_gaussian, "");
     m.def("reset_ellipse_gaussian_timing", &reset_ellipse_gaussian_timing, "");
     m.def("print_ellipse_gaussian_timing", &print_ellipse_gaussian_timing, "");
