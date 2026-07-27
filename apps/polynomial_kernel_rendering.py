@@ -34,7 +34,7 @@ theta       = torch.zeros(N).clone().requires_grad_(True)
 
 # Polynomial kernel coefficients: f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e
 # Global: one set shared across every ellipse. All start at 1.
-poly_coeffs = torch.tensor([1.0, -4.0, 6.0, -4.0, 1.0]).clone().requires_grad_(True) # (1-t)^4
+poly_coeffs = torch.tensor([1.0, -4.0, 6.0, -4.0, 1.0]).repeat(N, 1).clone().requires_grad_(True)
 
 optimizer = torch.optim.Adam([
     {'params': [positions_n, colors, log_a, log_b, theta], 'lr': 1e-2},
@@ -53,11 +53,11 @@ for t in range(iters):
         positions_px, colors, a_px, b_px, theta, poly_coeffs, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
-    coeff_history.append(poly_coeffs.detach().clone().numpy())
+    coeff_history.append(poly_coeffs.detach().mean(dim=0).clone().numpy())  # (5,) per iter
     loss.backward()
 
     print('iter', t, 'loss', loss.item())
-    print('poly coeffs [a,b,c,d,e]:', poly_coeffs.detach().numpy())
+    print('poly coeffs mean [a,b,c,d,e]:', poly_coeffs.detach().mean(dim=0).numpy())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
@@ -80,10 +80,15 @@ for t in range(iters):
 
 print(f'final loss: {loss.item():.4f}')
 print('final poly coeffs [a,b,c,d,e]:', poly_coeffs.detach().numpy())
+
 with open('results/polynomial_kernel_rendering/final_coeffs.txt', 'w') as f:
     names = ['a (t^4)', 'b (t^3)', 'c (t^2)', 'd (t^1)', 'e (t^0)']
-    for name, val in zip(names, poly_coeffs.detach().numpy()):
-        f.write(f'{name}: {val:.6f}\n')
+    coeffs_np = poly_coeffs.detach().numpy()  # (N, 5)
+    mean_c = coeffs_np.mean(axis=0)
+    std_c = coeffs_np.std(axis=0)
+    for name, m, s in zip(names, mean_c, std_c):
+        f.write(f'{name}: mean={m:.6f}, std={s:.6f}\n')
+
 with open('results/polynomial_kernel_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
 
@@ -128,7 +133,7 @@ print('saved coefficient_trajectories.png')
 # same clamp-to-[0,1].
 # -------------------------------------------------------------------
 t_range = torch.linspace(0, 1, 200)
-final_coeffs = poly_coeffs.detach()
+final_coeffs = poly_coeffs.detach().mean(dim=0)  # (5,) mean across ellipses
 
 def eval_poly(coeffs, t):
     a, b, c, d, e = coeffs

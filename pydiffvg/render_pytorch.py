@@ -932,9 +932,8 @@ class EllipseWendlandRenderFunction(torch.autograd.Function):
         return d_positions, d_colours, d_a, d_b, d_theta, None, None
 
 class EllipsePolyRenderFunction(torch.autograd.Function):
-    # a, b are ACTUAL semi-axis lengths (post-exp), not log. coeffs is [a,b,c,d,e] for
-    # f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e, shared globally across
-    # every ellipse in the scene.
+    # a, b are ACTUAL semi-axis lengths (post-exp), not log. coeffs is [N, 5]
+    # (one [a,b,c,d,e] per ellipse) for f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e.
     @staticmethod
     def forward(ctx, positions, colours, a, b, theta, coeffs, width, height):
         positions_cpu = positions.contiguous().cpu()

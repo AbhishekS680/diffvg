@@ -1901,12 +1901,6 @@ void render_ellipse_poly(const EllipseWendlandField &field,
                          int height) {
     const int N = field.num_points;
 
-    float a_coeff = coeffs.get()[0];
-    float b_coeff = coeffs.get()[1];
-    float c_coeff = coeffs.get()[2];
-    float d_coeff = coeffs.get()[3];
-    float e_coeff = coeffs.get()[4];
-
     // per-pixel storage: history of the accumulator's state after each ellipse
     std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
     std::vector<float> hist_t(N), hist_alpha_i(N);
@@ -1934,10 +1928,16 @@ void render_ellipse_poly(const EllipseWendlandField &field,
 
                 float alpha_i = 0.0f;
                 if (t < 1.0f) {
-                    // Polynomial kernel: f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e
+                    float a_coeff = coeffs.get()[i * 5 + 0];
+                    float b_coeff = coeffs.get()[i * 5 + 1];
+                    float c_coeff = coeffs.get()[i * 5 + 2];
+                    float d_coeff = coeffs.get()[i * 5 + 3];
+                    float e_coeff = coeffs.get()[i * 5 + 4];
                     float t2 = t * t;
                     float t3 = t2 * t;
                     float t4 = t3 * t;
+
+                    // Polynomial formula
                     float f = a_coeff*t4 + b_coeff*t3 + c_coeff*t2 + d_coeff*t + e_coeff;
                     // Clamp for valid opacity, this polynomial has no built-in guarantee of hitting 0 at t=1.
                     alpha_i = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
@@ -2024,6 +2024,13 @@ void render_ellipse_poly(const EllipseWendlandField &field,
                     float dyp = -sinT * dx + cosT * dy;
                     float u = dxp / ai;
                     float v = dyp / bi;
+
+                    float a_coeff = coeffs.get()[i * 5 + 0];
+                    float b_coeff = coeffs.get()[i * 5 + 1];
+                    float c_coeff = coeffs.get()[i * 5 + 2];
+                    float d_coeff = coeffs.get()[i * 5 + 3];
+                    float e_coeff = coeffs.get()[i * 5 + 4];
+
                     float t2 = t * t;
                     float t3 = t2 * t;
                     float t4 = t3 * t;
@@ -2035,11 +2042,11 @@ void render_ellipse_poly(const EllipseWendlandField &field,
                     if (!clamped) {
                         // d(alpha)/d(coeff_j) = t^4, t^3, t^2, t^1, t^0
                         if (d_coeffs.get() != nullptr) {
-                            d_coeffs.get()[0] += d_alpha_i * t4;
-                            d_coeffs.get()[1] += d_alpha_i * t3;
-                            d_coeffs.get()[2] += d_alpha_i * t2;
-                            d_coeffs.get()[3] += d_alpha_i * t;
-                            d_coeffs.get()[4] += d_alpha_i;
+                            d_coeffs.get()[i * 5 + 0] += d_alpha_i * t4;
+                            d_coeffs.get()[i * 5 + 1] += d_alpha_i * t3;
+                            d_coeffs.get()[i * 5 + 2] += d_alpha_i * t2;
+                            d_coeffs.get()[i * 5 + 3] += d_alpha_i * t;
+                            d_coeffs.get()[i * 5 + 4] += d_alpha_i;
                         }
 
                         // dw/dt = 4a*t^3 + 3b*t^2 + 2c*t + d
