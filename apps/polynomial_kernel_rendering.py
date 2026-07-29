@@ -17,7 +17,7 @@ from matplotlib.patches import Ellipse
 os.makedirs('results/polynomial_kernel_rendering', exist_ok=True)
 
 N = 1000
-iters = 250
+iters = 500 # High iteration number for learning the polynomial kernel coefficients
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
