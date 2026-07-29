@@ -33,7 +33,7 @@ log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_g
 theta       = torch.zeros(N).clone().requires_grad_(True)
 
 # Polynomial kernel coefficients: f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e
-# Global: one set shared across every ellipse. All start at 1.
+# 1000 ellipses × 5 coefficients = 5000 learnable parameters (an example)
 poly_coeffs = torch.tensor([1.0, -4.0, 6.0, -4.0, 1.0]).repeat(N, 1).clone().requires_grad_(True)
 
 optimizer = torch.optim.Adam([
