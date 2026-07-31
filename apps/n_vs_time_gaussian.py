@@ -11,12 +11,14 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import os
 
 # Fixed target image so canvas size doesn't confound the N sweep
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.set_use_gpu(torch.cuda.is_available())
+os.makedirs('results/n_vs_time', exist_ok=True)
 
 N_values = [50, 100, 250, 500, 1000, 2000, 4000, 10000]
 forward_times = []
@@ -43,11 +45,12 @@ for N in N_values:
     total_times.append(fwd_ms + bwd_ms)
     print(f'N={N}: forward={fwd_ms:.2f} ms, backward={bwd_ms:.2f} ms, total={fwd_ms + bwd_ms:.2f} ms')
 
-with open('results/n_vs_time_gaussian.txt', 'w') as f:
+with open('results/n_vs_time/n_vs_time_gaussian.txt', 'w') as f:
     f.write('N, forward_ms, backward_ms, total_ms\n')
     for N, fwd, bwd, tot in zip(N_values, forward_times, backward_times, total_times):
         f.write(f'{N}, {fwd:.3f}, {bwd:.3f}, {tot:.3f}\n')
-print('saved results/n_vs_time_gaussian.txt')
+
+print('saved results/n_vs_time/n_vs_time_gaussian.txt')
 
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(N_values, total_times, marker='o', label='Total (fwd+bwd)')
@@ -57,6 +60,6 @@ ax.set_xlabel('N (number of ellipses)')
 ax.set_ylabel('Time (ms)')
 ax.set_title('Render time vs N (Gaussian)')
 ax.legend()
-plt.savefig('results/n_vs_time_gaussian.png', bbox_inches='tight', dpi=150)
+plt.savefig('results/n_vs_time/n_vs_time_gaussian.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
-print('saved results/n_vs_time_gaussian.png')
+print('saved results/n_vs_time/n_vs_time_gaussian.png')
