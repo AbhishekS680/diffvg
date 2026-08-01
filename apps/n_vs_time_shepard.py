@@ -21,7 +21,7 @@ pydiffvg.set_use_gpu(torch.cuda.is_available())
 os.makedirs('results/n_vs_time', exist_ok=True)
 
 q = 3.0
-N_values = [50, 100, 250, 500, 1000, 2000, 4000, 10000]
+N_values = [50, 100, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000]
 forward_times = []
 backward_times = []
 total_times = []
