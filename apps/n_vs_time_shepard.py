@@ -12,6 +12,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
+import time
 
 # Fixed target image so canvas size doesn't confound the N sweep
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
@@ -39,6 +40,7 @@ for N in N_values:
     backward_times.append(bwd_ms)
     total_times.append(fwd_ms + bwd_ms)
     print(f'N={N}: forward={fwd_ms:.2f} ms, backward={bwd_ms:.2f} ms, total={fwd_ms + bwd_ms:.2f} ms')
+    time.sleep(10)  # let the machine cool between runs
 
 with open('results/n_vs_time/n_vs_time_shepard.txt', 'w') as f:
     f.write('N, forward_ms, backward_ms, total_ms\n')
