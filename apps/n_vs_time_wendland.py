@@ -12,6 +12,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
+import time
 
 # Fixed target image so canvas size doesn't confound the N sweep
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
@@ -20,7 +21,7 @@ canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 os.makedirs('results/n_vs_time', exist_ok=True)
 
-N_values = [50, 100, 250, 500, 1000, 2000, 4000, 10000]
+N_values = [50, 100, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000]
 forward_times = []
 backward_times = []
 total_times = []
@@ -44,6 +45,7 @@ for N in N_values:
     backward_times.append(bwd_ms)
     total_times.append(fwd_ms + bwd_ms)
     print(f'N={N}: forward={fwd_ms:.2f} ms, backward={bwd_ms:.2f} ms, total={fwd_ms + bwd_ms:.2f} ms')
+    time.sleep(10)  # let the machine cool between runs
 
 with open('results/n_vs_time/n_vs_time_wendland.txt', 'w') as f:
     f.write('N, forward_ms, backward_ms, total_ms\n')
