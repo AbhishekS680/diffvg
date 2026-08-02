@@ -31,7 +31,6 @@ colors      = torch.rand(N, 3).clone().requires_grad_(True)
 log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 theta       = torch.zeros(N).clone().requires_grad_(True)
-
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
 diffvg.reset_ellipse_gaussian_timing()
@@ -46,32 +45,26 @@ for t in range(iters):
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
-
     print('iter', t, 'loss', loss.item())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
-
     optimizer.step()
-
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
-
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-        # theta unclamped, rotation wraps naturally
 
+        # theta unclamped, rotation wraps naturally
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
                       'results/gaussian_rendering/iter_{}.png'.format(t), gamma=1.0)
-
 print(f'final loss: {loss.item():.4f}')
 with open('results/gaussian_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
-
 diffvg.print_ellipse_gaussian_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_gaussian_timing()
 with open('results/gaussian_rendering/timing.txt', 'w') as f:
@@ -100,7 +93,6 @@ t_range = torch.linspace(0, 1, 200)
 sigma = 1.0 / 3.0
 gaussian = torch.exp(-(t_range**2) / (2 * sigma**2))
 wendland = (1 - t_range).clamp(min=0)**4 * (4 * t_range + 1)
-
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(t_range.numpy(), gaussian.numpy(), label='Gaussian RBF (sigma=1/3)')
 ax.plot(t_range.numpy(), wendland.numpy(), ':', label='Wendland C2 (reference)')
@@ -126,29 +118,37 @@ pydiffvg.imwrite(final.detach().clamp(0, 1).cpu(), 'results/gaussian_rendering/f
 # Labeled ellipses with edges
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
+fig.patch.set_facecolor('black')
 display_img = final.detach().clamp(0, 1).cpu().numpy()
-ax.imshow(display_img)
+ALPHA_CUTOFF = 0.02
+
+# Treat near-black pixels (faint kernel fringe / no real ellipse coverage) as transparent
+alpha_mask = (display_img.max(axis=2) > ALPHA_CUTOFF).astype(np.float32)
+rgba_img = np.dstack([display_img, alpha_mask])
+ax.imshow(rgba_img)
 pos_np = positions_px.detach().cpu().numpy()
 a_np = a_px.detach().cpu().numpy()
 b_np = b_px.detach().cpu().numpy()
 theta_np = theta.detach().cpu().numpy()
 
+# Gaussian kernel: exp(-t^2 / (2*sigma^2)) = ALPHA_CUTOFF, solve for t directly
+# (no bisection needed, unlike Wendland's polynomial form)
+t_boundary = sigma * np.sqrt(-2 * np.log(ALPHA_CUTOFF))
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
 for idx, (x, y) in enumerate(pos_np):
-    ax.add_patch(Ellipse((x, y), width=2*a_np[idx], height=2*b_np[idx],
+    ax.add_patch(Ellipse((x, y), width=2*a_np[idx]*t_boundary, height=2*b_np[idx]*t_boundary,
                           angle=np.degrees(theta_np[idx]),
                           facecolor='none', edgecolor='lime', linewidth=0.8))
     ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
                 xytext=(3, 3), textcoords='offset points')
-
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 ax.axis('off')
-plt.savefig('results/gaussian_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
+plt.savefig('results/gaussian_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150,
+            facecolor='black')
 plt.close(fig)
 print('saved final_labeled.png')
-
 final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # -------------------------------------------------------------------
@@ -157,7 +157,6 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 final_positions_px = positions_px.detach().numpy()
 u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
 v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
-
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
 ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
@@ -184,7 +183,6 @@ fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 plt.savefig('results/gaussian_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved error_heatmap.png')
-
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 axes[0].imshow(target_np)
 axes[0].set_title('Target')
