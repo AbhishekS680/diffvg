@@ -1,6 +1,9 @@
 # comparison_shepard.py
-# Residual reconstruction: Shepard points fit the signed error between
-# original and degraded, then get added on top of the degraded photo.
+# Direct reconstruction: control points fit directly to the clear (original)
+# target image -- no residual/error-image step, no background compositing.
+# degraded is kept only for reference (saved + shown in the comparison grid),
+# not used in the render or the loss.
+
 import argparse
 import pydiffvg
 import torch
@@ -13,19 +16,16 @@ import os
 import diffvg
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--target', required=True)                     # sharper image (was arch.jpg)
-parser.add_argument('--degraded', required=True)                   # blurrier image (was arch_blurry.jpg)
+parser.add_argument('--target', required=True)                     # sharper image
+parser.add_argument('--degraded', required=True)                   # blurrier image (reference only)
 parser.add_argument('--outdir', default='results/comparison_shepard')
 args = parser.parse_args()
-
 os.makedirs(args.outdir, exist_ok=True)
-os.makedirs(f'{args.outdir}/error_only', exist_ok=True)
-os.makedirs(f'{args.outdir}/combined', exist_ok=True)
+os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
 N = 1000
 q = 3.0
 iters = 250
-
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---
@@ -41,25 +41,21 @@ pydiffvg.imwrite(degraded.cpu(), f'{args.outdir}/init_source_degraded.png', gamm
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
 
-# Signed residual, not squared
-error_image = original - degraded
-pydiffvg.imwrite((error_image * 0.5 + 0.5).clamp(0, 1).cpu(),
-                  f'{args.outdir}/error_image_visualized.png', gamma=1.0)
-
-# Init: random positions, colors near zero (additive correction)
+# Init: random positions/colors. Color init doesn't matter much since it
+# gets optimized
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
-colors = (torch.zeros(N, 3) + torch.rand(N, 3) * 0.05 - 0.025).clone().requires_grad_(True)
+colors = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
 loss_history = []
 open(f'{args.outdir}/gradient_log.txt', 'w').close()
 diffvg.reset_shepard_timing()
 
-# --- Optimization loop: fit points to the error image ---
+# --- Optimization loop: points fit directly against the clear image ---
 for t in range(iters):
     optimizer.zero_grad()
     positions = positions_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height)
-    loss = (img - error_image).pow(2).sum()
+    loss = (img - original).pow(2).sum()
 
     # Repulsion: move control points that are too close to each other
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
@@ -86,15 +82,8 @@ for t in range(iters):
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
-        colors.clamp_(-1.0, 1.0)
-
-    # Raw Shepard output only, no degraded photo
-    raw_error_preview = (img.detach() * 0.5 + 0.5).clamp(0, 1)
-    pydiffvg.imwrite(raw_error_preview.cpu(), f'{args.outdir}/error_only/iter_{t}.png', gamma=1.0)
-
-    # Combined: degraded photo + correction
-    combined_preview = (degraded + img.detach()).clamp(0, 1)
-    pydiffvg.imwrite(combined_preview.cpu(), f'{args.outdir}/combined/iter_{t}.png', gamma=1.0)
+        colors.clamp_(0.0, 1.0)
+    pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(), f'{args.outdir}/iters/iter_{t}.png', gamma=1.0)
 print(f'final loss: {loss.item():.4f}')
 with open(f'{args.outdir}/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
@@ -108,17 +97,15 @@ fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)
 ax.set_xlabel('Iteration')
 ax.set_ylabel('Loss')
-ax.set_title(f'Convergence (N={N}, q={q}, fitting residual error)')
+ax.set_title(f'Convergence (N={N}, q={q}, fitting directly to target)')
 plt.savefig(f'{args.outdir}/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
 
-# --- Final render: raw error, combined result, both saved ---
-reconstructed_error = pydiffvg.ShepardRenderFunction.apply(
+# --- Final render: this IS the reconstruction, no addition step needed ---
+final = pydiffvg.ShepardRenderFunction.apply(
     positions_n * torch.tensor([canvas_width, canvas_height]), colors, q, canvas_width, canvas_height)
-pydiffvg.imwrite((reconstructed_error.detach() * 0.5 + 0.5).clamp(0, 1).cpu(),
-                  f'{args.outdir}/reconstructed_error_only.png', gamma=1.0)
-final = (degraded + reconstructed_error).clamp(0, 1)
+final = final.clamp(0, 1)
 pydiffvg.imwrite(final.detach().cpu(), f'{args.outdir}/final.png', gamma=1.0)
 
 # Overlay control points on final render
@@ -170,13 +157,13 @@ print('saved error_heatmap.png')
 # Comparison grid
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 axes[0].imshow(degraded_np)
-axes[0].set_title('Degraded (base)')
+axes[0].set_title('Degraded (reference only)')
 axes[0].axis('off')
 axes[1].imshow(original_np)
 axes[1].set_title('Original (target)')
 axes[1].axis('off')
 axes[2].imshow(final_np)
-axes[2].set_title('Degraded + reconstructed error')
+axes[2].set_title('Reconstruction')
 axes[2].axis('off')
 im = axes[3].imshow(error_map, cmap='inferno')
 axes[3].set_title('Error heatmap')
@@ -188,8 +175,5 @@ print('saved all_comparison.png')
 
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
-    f"{args.outdir}/error_only/iter_%d.png", "-vb", "20M",
-    f"{args.outdir}/error_only.mp4"])
-call(["ffmpeg", "-framerate", "24", "-i",
-    f"{args.outdir}/combined/iter_%d.png", "-vb", "20M",
-    f"{args.outdir}/combined.mp4"])
+    f"{args.outdir}/iters/iter_%d.png", "-vb", "20M",
+    f"{args.outdir}/iters.mp4"])
