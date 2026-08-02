@@ -1679,6 +1679,7 @@ py::tuple get_ellipse_gaussian_timing() {
 constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f; // How quickly opacity fades as you move away from the ellipse center
 
 void render_ellipse_gaussian(const EllipseGaussianField &field,
+                             ptr<float> background_image,
                              ptr<float> render_image,
                              ptr<float> d_render_image,
                              ptr<float> d_positions,
@@ -1697,6 +1698,13 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            if (background_image.get() != nullptr) {
+                int bg_index = (y * width + x) * 3;
+                accum_r = background_image.get()[bg_index + 0];
+                accum_g = background_image.get()[bg_index + 1];
+                accum_b = background_image.get()[bg_index + 2];
+                accum_alpha = 1.0f;
+            }
             auto fwd_start = std::chrono::high_resolution_clock::now();
 
             // Forward Pass
