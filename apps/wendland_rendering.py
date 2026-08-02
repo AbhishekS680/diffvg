@@ -1,7 +1,6 @@
 # wendland_rendering.py
 # Anisotropic Wendland C2 kernel field renderer
 # The kernel's influence isn't the same in every direction
-
 import pydiffvg
 import diffvg
 import torch
@@ -10,7 +9,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
-
 import numpy as np
 from matplotlib.patches import Ellipse
 
@@ -20,7 +18,6 @@ N = 1000
 iters = 250
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
-
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
@@ -33,12 +30,9 @@ colors      = (torch.rand(N, 3)).clone().requires_grad_(True)
 # Are log so they stay positive, start as a circle
 log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True) # semi-axis a
 log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True) # semi-axis b
-
 theta       = torch.zeros(N).clone().requires_grad_(True) # rotation, radians
-
 optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2)
 loss_history = []
-
 diffvg.reset_ellipse_wendland_timing()
 
 for t in range(iters):
@@ -50,26 +44,23 @@ for t in range(iters):
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
-
     print('iter', t, 'loss', loss.item())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
-
     optimizer.step()
-
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
-
     with torch.no_grad():
+
         # forces parameters into valid ranges after Adam updated them
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-        # theta is unclamped, rotation naturally wraps
 
+        # theta is unclamped, rotation naturally wraps
     pydiffvg.imwrite(img.clamp(0, 1).cpu(), 'results/wendland_rendering/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final loss: {loss.item():.4f}')
@@ -81,7 +72,6 @@ with open('results/wendland_rendering/timing.txt', 'w') as f:
     f.write(f"render_ellipse_wendland timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
     f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
     f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
-
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)
 ax.set_xlabel('Iteration')
@@ -89,7 +79,6 @@ ax.set_ylabel('Loss')
 ax.set_title(f'Convergence (N={N})')
 plt.savefig('results/wendland_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
-
 positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
@@ -100,29 +89,46 @@ pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/wendland_rendering/final.png'
 # Visualization: overlay control point locations on the final render.
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
+fig.patch.set_facecolor('black')
 display_img = final.detach().clamp(0, 1).cpu().numpy()
-ax.imshow(display_img)
+ALPHA_CUTOFF = 0.02
+
+# Treat near-black pixels (faint kernel fringe / no real ellipse coverage) as transparent
+alpha_mask = (display_img.max(axis=2) > ALPHA_CUTOFF).astype(np.float32)
+rgba_img = np.dstack([display_img, alpha_mask])
+ax.imshow(rgba_img)
+
+# Find t where the Wendland kernel drops to ALPHA_CUTOFF, so the drawn
+# outline matches the visible region instead of the full geometric ellipse
+# (t=1), which extends past where color actually shows.
+lo, hi = 0.0, 1.0
+for _ in range(50):
+    mid = (lo + hi) / 2
+    val = (1 - mid)**4 * (4 * mid + 1)
+    if val > ALPHA_CUTOFF:
+        lo = mid
+    else:
+        hi = mid
+t_boundary = mid
 pos_np = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).cpu().numpy()
 a_np = a_px.detach().cpu().numpy()
 b_np = b_px.detach().cpu().numpy()
 theta_np = theta.detach().cpu().numpy()
-
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
 for idx, (x, y) in enumerate(pos_np):
-    ax.add_patch(Ellipse((x, y), width=2*a_np[idx], height=2*b_np[idx],
+    ax.add_patch(Ellipse((x, y), width=2*a_np[idx]*t_boundary, height=2*b_np[idx]*t_boundary,
                           angle=np.degrees(theta_np[idx]),
                           facecolor='none', edgecolor='lime', linewidth=0.8))
     ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
                 xytext=(3, 3), textcoords='offset points')
-
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 ax.axis('off')
-plt.savefig('results/wendland_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
+plt.savefig('results/wendland_rendering/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150,
+            facecolor='black')
 plt.close(fig)
 print('saved final_labeled.png')
-
 final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # -------------------------------------------------------------------
@@ -131,7 +137,6 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 final_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).numpy()
 u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
 v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
-
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
 ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
