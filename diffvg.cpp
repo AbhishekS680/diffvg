@@ -1679,6 +1679,7 @@ py::tuple get_ellipse_wendland_timing() {
     }
 
 void render_ellipse_wendland(const EllipseWendlandField &field,
+                             ptr<float> background_image,
                              ptr<float> render_image,
                              ptr<float> d_render_image,
                              ptr<float> d_positions,
@@ -1697,8 +1698,14 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
     // Looking at each pixel one by one
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            // Accumulator starts at background: black, alpha 0
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            if (background_image.get() != nullptr) {
+                int bg_index = (y * width + x) * 3;
+                accum_r = background_image.get()[bg_index + 0];
+                accum_g = background_image.get()[bg_index + 1];
+                accum_b = background_image.get()[bg_index + 2];
+                accum_alpha = 1.0f;
+            }
 
             auto fwd_start = std::chrono::high_resolution_clock::now();
 

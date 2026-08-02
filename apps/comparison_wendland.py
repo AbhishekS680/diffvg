@@ -1,6 +1,10 @@
 # comparison_wendland.py
-# Residual reconstruction: ellipses fit the signed error between original
-# and degraded, then get added on top of the degraded photo.
+# Direct reconstruction: canvas starts as the blurry (degraded) image,
+# ellipses composite directly on top of it (same alpha-over math as before),
+# and loss compares the result straight to the clear (original) target.
+# No residual/error-image step, no "add correction back" at the end --
+# the rendered output IS the reconstruction.
+
 import argparse
 import pydiffvg
 import diffvg
@@ -14,18 +18,15 @@ import os
 from matplotlib.patches import Ellipse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--target', required=True)                     # sharper image (was arch.jpg)
-parser.add_argument('--degraded', required=True)                   # blurrier image (was arch_blurry.jpg)
+parser.add_argument('--target', required=True)                     # sharper image
+parser.add_argument('--degraded', required=True)                   # blurrier image (used as starting canvas)
 parser.add_argument('--outdir', default='results/comparison_wendland')
 args = parser.parse_args()
-
 os.makedirs(args.outdir, exist_ok=True)
-os.makedirs(f'{args.outdir}/error_only', exist_ok=True)
-os.makedirs(f'{args.outdir}/combined', exist_ok=True)
+os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
-N = 1000
-iters = 250
-
+N = 100
+iters = 20
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---
@@ -41,14 +42,10 @@ pydiffvg.imwrite(degraded.cpu(), f'{args.outdir}/init_source_degraded.png', gamm
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
 
-# Signed residual, not squared
-error_image = original - degraded
-pydiffvg.imwrite((error_image * 0.5 + 0.5).clamp(0, 1).cpu(),
-                  f'{args.outdir}/error_image_visualized.png', gamma=1.0)
-
-# Init: random positions/shape, colors near zero (additive correction)
+# Init: random positions/shape/color. Color init doesn't matter much since
+# it gets optimized -- confirmed with Dr. Mould.
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
-colors = (torch.zeros(N, 3) + torch.rand(N, 3) * 0.05 - 0.025).clone().requires_grad_(True)
+colors = (torch.rand(N, 3)).clone().requires_grad_(True)
 log_a = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 log_b = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 theta = torch.zeros(N).clone().requires_grad_(True)
@@ -56,15 +53,16 @@ optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2
 loss_history = []
 diffvg.reset_ellipse_wendland_timing()
 
-# --- Optimization loop: fit ellipses to the error image ---
+# --- Optimization loop: ellipses composited on top of the blurry image,
+#     compared directly against the clear image ---
 for t in range(iters):
     optimizer.zero_grad()
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
     img = pydiffvg.EllipseWendlandRenderFunction.apply(
-        positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
-    loss = (img - error_image).pow(2).sum()
+        positions_px, colors, a_px, b_px, theta, degraded, canvas_width, canvas_height)
+    loss = (img - original).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
     print('iter', t, 'loss', loss.item())
@@ -77,17 +75,10 @@ for t in range(iters):
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
-        colors.clamp_(-1.0, 1.0)
+        colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-
-    # Raw ellipse output only, no degraded photo
-    raw_error_preview = (img.detach() * 0.5 + 0.5).clamp(0, 1)
-    pydiffvg.imwrite(raw_error_preview.cpu(), f'{args.outdir}/error_only/iter_{t}.png', gamma=1.0)
-
-    # Combined: degraded photo + ellipse correction
-    combined_preview = (degraded + img.detach()).clamp(0, 1)
-    pydiffvg.imwrite(combined_preview.cpu(), f'{args.outdir}/combined/iter_{t}.png', gamma=1.0)
+    pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(), f'{args.outdir}/iters/iter_{t}.png', gamma=1.0)
 print(f'final loss: {loss.item():.4f}')
 
 # Write timing results to a text file
@@ -103,20 +94,18 @@ fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)
 ax.set_xlabel('Iteration')
 ax.set_ylabel('Loss')
-ax.set_title(f'Convergence (N={N}, fitting residual error)')
+ax.set_title(f'Convergence (N={N}, ellipses composited on blurry image)')
 plt.savefig(f'{args.outdir}/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
 
-# --- Final render: raw error, combined result, both saved ---
+# --- Final render: this IS the reconstruction, no addition step needed ---
 positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
-reconstructed_error = pydiffvg.EllipseWendlandRenderFunction.apply(
-    positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
-pydiffvg.imwrite((reconstructed_error.detach() * 0.5 + 0.5).clamp(0, 1).cpu(),
-                  f'{args.outdir}/reconstructed_error_only.png', gamma=1.0)
-final = (degraded + reconstructed_error).clamp(0, 1)
+final = pydiffvg.EllipseWendlandRenderFunction.apply(
+    positions_px, colors, a_px, b_px, theta, degraded, canvas_width, canvas_height)
+final = final.clamp(0, 1)
 pydiffvg.imwrite(final.detach().cpu(), f'{args.outdir}/final.png', gamma=1.0)
 
 # Overlay control points on final render
@@ -175,13 +164,13 @@ print('saved error_heatmap.png')
 # Comparison grid
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 axes[0].imshow(degraded_np)
-axes[0].set_title('Degraded (base)')
+axes[0].set_title('Degraded (starting canvas)')
 axes[0].axis('off')
 axes[1].imshow(original_np)
 axes[1].set_title('Original (target)')
 axes[1].axis('off')
 axes[2].imshow(final_np)
-axes[2].set_title('Degraded + reconstructed error')
+axes[2].set_title('Reconstruction')
 axes[2].axis('off')
 im = axes[3].imshow(error_map, cmap='inferno')
 axes[3].set_title('Error heatmap')
@@ -193,8 +182,5 @@ print('saved all_comparison.png')
 
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
-    f"{args.outdir}/error_only/iter_%d.png", "-vb", "20M",
-    f"{args.outdir}/error_only.mp4"])
-call(["ffmpeg", "-framerate", "24", "-i",
-    f"{args.outdir}/combined/iter_%d.png", "-vb", "20M",
-    f"{args.outdir}/combined.mp4"])
+    f"{args.outdir}/iters/iter_%d.png", "-vb", "20M",
+    f"{args.outdir}/iters.mp4"])
