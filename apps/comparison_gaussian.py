@@ -26,7 +26,7 @@ os.makedirs(args.outdir, exist_ok=True)
 os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
 N = 1000
-iters = 250
+iters = 500
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---

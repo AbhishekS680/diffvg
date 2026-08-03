@@ -1,6 +1,6 @@
 # gaussian_rendering.py
 # Anisotropic ellipse renderer using a fixed Gaussian RBF kernel:
-#   f(t) = exp(-t^2 / (2*sigma^2)), sigma = 1/3 (fixed in diffvg.cpp, not learnable)
+# f(t) = exp(-t^2 / (2*sigma^2)), sigma = 1/3 (fixed in diffvg.cpp, not learnable)
 
 import pydiffvg
 import diffvg
@@ -16,7 +16,7 @@ from matplotlib.patches import Ellipse
 os.makedirs('results/gaussian_rendering', exist_ok=True)
 
 N = 1000
-iters = 250
+iters = 500
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
@@ -41,7 +41,7 @@ for t in range(iters):
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
     img = pydiffvg.EllipseGaussianRenderFunction.apply(
-        positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+        positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
@@ -111,7 +111,7 @@ positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
 final = pydiffvg.EllipseGaussianRenderFunction.apply(
-    positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+    positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
 pydiffvg.imwrite(final.detach().clamp(0, 1).cpu(), 'results/gaussian_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------

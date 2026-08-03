@@ -37,7 +37,7 @@ for N in N_values:
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
     img = pydiffvg.EllipseGaussianRenderFunction.apply(
-        positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+        positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss.backward()
     fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_gaussian_timing()
