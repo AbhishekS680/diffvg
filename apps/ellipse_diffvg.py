@@ -12,14 +12,12 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 from matplotlib.patches import Ellipse
-
 os.makedirs('results/ellipse_diffvg', exist_ok=True)
 
-N = 100
-iters = 250
+N = 1000
+iters = 500
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
-
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
@@ -30,21 +28,21 @@ pydiffvg.imwrite(target.cpu(), 'results/ellipse_diffvg/target.png', gamma=1.0)
 positions_n = torch.rand(N, 2).clone().requires_grad_(True)
 log_a = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
 log_b = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
-# RGBA this time — diffvg's fill_color expects an alpha channel.
-colors = torch.rand(N, 4).clone().requires_grad_(True)
-with torch.no_grad():
-    colors[:, 3] = 1.0  # start fully opaque
 
-optimizer = torch.optim.Adam([positions_n, log_a, log_b, colors], lr=1e-2)
+# RGB is learnable; alpha is fixed at 1.0 (not in the optimizer) so these
+# stay genuinely hard-edged/opaque, matching the "baseline" framing --
+# letting alpha drift would make this a soft-blend comparison instead.
+colors_rgb = torch.rand(N, 3).clone().requires_grad_(True)
+alpha_fixed = torch.ones(N, 1)
+optimizer = torch.optim.Adam([positions_n, log_a, log_b, colors_rgb], lr=1e-2)
 loss_history = []
 
 for t in range(iters):
     optimizer.zero_grad()
-
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
-
+    colors = torch.cat([colors_rgb, alpha_fixed], dim=1)  # rebuild RGBA each iter
     shapes = []
     shape_groups = []
     for i in range(N):
@@ -54,35 +52,27 @@ for t in range(iters):
         shape_groups.append(pydiffvg.ShapeGroup(
             shape_ids=torch.tensor([i]),
             fill_color=colors[i]))
-
     scene_args = pydiffvg.RenderFunction.serialize_scene(
         canvas_width, canvas_height, shapes, shape_groups)
     img = pydiffvg.RenderFunction.apply(canvas_width, canvas_height, 2, 2, t, None, *scene_args)
     img = img[:, :, :3]  # drop alpha channel for loss against RGB target
-
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
-
     print('iter', t, 'loss', loss.item())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
-
     optimizer.step()
-
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
-
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
-        colors.clamp_(0.0, 1.0)
+        colors_rgb.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-
     pydiffvg.imwrite(img.clamp(0, 1).detach().cpu(), 'results/ellipse_diffvg/iter_{}.png'.format(t), gamma=1.0)
-
 print(f'final loss: {loss.item():.4f}')
 with open('results/ellipse_diffvg/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
@@ -103,8 +93,10 @@ print('saved loss_curve.png')
 positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
+colors = torch.cat([colors_rgb, alpha_fixed], dim=1)
 shapes = []
 shape_groups = []
+
 for i in range(N):
     ellipse = pydiffvg.Ellipse(radius=torch.stack([a_px[i], b_px[i]]),
                                center=positions_px[i])
@@ -129,7 +121,6 @@ ax.imshow(display_img)
 pos_np = positions_px.detach().cpu().numpy()
 a_np = a_px.detach().cpu().numpy()
 b_np = b_px.detach().cpu().numpy()
-
 ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=15, edgecolors='white', linewidths=0.5)
 for idx, (x, y) in enumerate(pos_np):
     ax.add_patch(Ellipse((x, y), width=2*a_np[idx], height=2*b_np[idx],
@@ -137,7 +128,6 @@ for idx, (x, y) in enumerate(pos_np):
                           facecolor='none', edgecolor='lime', linewidth=0.8))
     ax.annotate(str(idx), (x, y), color='yellow', fontsize=8,
                 xytext=(3, 3), textcoords='offset points')
-
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -145,7 +135,6 @@ ax.axis('off')
 plt.savefig('results/ellipse_diffvg/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
 plt.close(fig)
 print('saved final_labeled.png')
-
 final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # -------------------------------------------------------------------
@@ -154,7 +143,6 @@ final_np = final.detach().clamp(0, 1).cpu().numpy()
 final_positions_px = positions_px.detach().numpy()
 u = final_positions_px[:, 0] - second_last_positions_px[:, 0]
 v = final_positions_px[:, 1] - second_last_positions_px[:, 1]
-
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_np, alpha=0.6)
 ax.quiver(second_last_positions_px[:, 0], second_last_positions_px[:, 1], u, v,
@@ -199,7 +187,6 @@ fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
 plt.savefig('results/ellipse_diffvg/all_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved all_comparison.png')
-
 # Convert the intermediate renderings to a video.
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",

@@ -26,13 +26,13 @@ colour = torch.tensor([[0.5, 0.3, 0.7]], requires_grad=True)
 def compute_loss(position, a, b, theta, colour):
     with torch.no_grad():
         img = pydiffvg.EllipseWendlandRenderFunction.apply(
-            position, colour, a, b, theta, canvas_width, canvas_height)
+            position, colour, a, b, theta, None, canvas_width, canvas_height)
         return (img - target).pow(2).sum()
 
 
 # --- Step 1: analytical gradient, from your backward pass ---
 loss = pydiffvg.EllipseWendlandRenderFunction.apply(
-    position, colour, a, b, theta, canvas_width, canvas_height)
+    position, colour, a, b, theta, None, canvas_width, canvas_height)
 loss = (loss - target).pow(2).sum()
 loss.backward()
 

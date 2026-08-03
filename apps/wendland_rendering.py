@@ -15,7 +15,7 @@ from matplotlib.patches import Ellipse
 os.makedirs('results/wendland_rendering', exist_ok=True)
 
 N = 1000
-iters = 250
+iters = 500
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
@@ -40,7 +40,7 @@ for t in range(iters):
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
-    img = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+    img = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
@@ -82,7 +82,7 @@ plt.close(fig)
 positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width
-final = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, canvas_width, canvas_height)
+final = pydiffvg.EllipseWendlandRenderFunction.apply(positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
 pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/wendland_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------

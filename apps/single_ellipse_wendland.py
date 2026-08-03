@@ -9,7 +9,7 @@ import os
 os.makedirs('results/single_ellipse_wendland', exist_ok=True)
 
 canvas_width, canvas_height = 256, 256
-iters = 200
+iters = 500
 
 # ---- Known parameters, used to generate the target image ----
 true_position = torch.tensor([[128.0, 128.0]])
@@ -19,7 +19,7 @@ true_theta    = torch.tensor([0.0])
 true_colour   = torch.tensor([[0.3, 0.6, 0.3]])
 
 target = pydiffvg.EllipseWendlandRenderFunction.apply(
-    true_position, true_colour, true_a, true_b, true_theta,
+    true_position, true_colour, true_a, true_b, true_theta, None, 
     canvas_width, canvas_height)
 pydiffvg.imwrite(target.cpu(), 'results/single_ellipse_wendland/target.png', gamma=1.0)
 
@@ -33,7 +33,7 @@ colour   = torch.tensor([[0.3, 0.2, 0.8]], requires_grad=True)
 
 position_px = position_n * torch.tensor([canvas_width, canvas_height])
 img = pydiffvg.EllipseWendlandRenderFunction.apply(
-    position_px, colour, torch.exp(log_a), torch.exp(log_b), theta,
+    position_px, colour, torch.exp(log_a), torch.exp(log_b), theta, None,
     canvas_width, canvas_height)
 pydiffvg.imwrite(img.detach().cpu(), 'results/single_ellipse_wendland/init.png', gamma=1.0)
 
@@ -45,7 +45,7 @@ for t in range(iters):
     optimizer.zero_grad()
     position_px = position_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.EllipseWendlandRenderFunction.apply(
-        position_px, colour, torch.exp(log_a), torch.exp(log_b), theta,
+        position_px, colour, torch.exp(log_a), torch.exp(log_b), theta, None,
         canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
@@ -69,7 +69,7 @@ print(f'final loss: {loss.item():.4f}')
 # ---- Final render ----
 position_px = position_n * torch.tensor([canvas_width, canvas_height])
 img = pydiffvg.EllipseWendlandRenderFunction.apply(
-    position_px, colour, torch.exp(log_a), torch.exp(log_b), theta,
+    position_px, colour, torch.exp(log_a), torch.exp(log_b), theta, None,
     canvas_width, canvas_height)
 pydiffvg.imwrite(img.detach().cpu(), 'results/single_ellipse_wendland/final.png', gamma=1.0)
 
