@@ -1867,6 +1867,248 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
     }
 }
 
+// ============================================================
+// Boxed variant: same Wendland kernel, but ellipses are bucketed into a
+// tile grid so each pixel only checks nearby ellipses instead of all N.
+// Kept as a separate function from render_ellipse_wendland so the original
+// stays untouched and validated.
+// ============================================================
+static double g_ellipse_boxed_forward_time_ms = 0.0;
+static double g_ellipse_boxed_backward_time_ms = 0.0;
+static long long g_ellipse_boxed_forward_pixel_calls = 0;
+static long long g_ellipse_boxed_backward_pixel_calls = 0;
+void reset_ellipse_wendland_boxed_timing() {
+    g_ellipse_boxed_forward_time_ms = 0.0;
+    g_ellipse_boxed_backward_time_ms = 0.0;
+    g_ellipse_boxed_forward_pixel_calls = 0;
+    g_ellipse_boxed_backward_pixel_calls = 0;
+}
+void print_ellipse_wendland_boxed_timing() {
+    printf("---- render_ellipse_wendland_boxed timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_boxed_forward_time_ms, g_ellipse_boxed_forward_pixel_calls,
+           g_ellipse_boxed_forward_pixel_calls > 0 ? g_ellipse_boxed_forward_time_ms / g_ellipse_boxed_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_ellipse_boxed_backward_time_ms, g_ellipse_boxed_backward_pixel_calls,
+           g_ellipse_boxed_backward_pixel_calls > 0 ? g_ellipse_boxed_backward_time_ms / g_ellipse_boxed_backward_pixel_calls : 0.0);
+}
+py::tuple get_ellipse_wendland_boxed_timing() {
+    return py::make_tuple(g_ellipse_boxed_forward_time_ms, g_ellipse_boxed_forward_pixel_calls,
+                           g_ellipse_boxed_backward_time_ms, g_ellipse_boxed_backward_pixel_calls);
+}
+
+// Buckets ellipses into a grid of tiles. Each ellipse is registered in
+// every tile its exact axis-aligned bounding box overlaps -- a pixel
+// outside that box is guaranteed to have t >= 1 for that ellipse (exact
+// prune, not an approximation).
+constexpr int WENDLAND_TILE_SIZE = 64; // pixels per tile side, change if needed
+
+struct EllipseTileGrid {
+    int tile_size;
+    int num_tiles_x, num_tiles_y;
+    std::vector<std::vector<int>> tiles; // ascending ellipse index per tile
+
+    EllipseTileGrid(const EllipseWendlandField &field, int width, int height, int tile_size)
+        : tile_size(tile_size) {
+        num_tiles_x = (width  + tile_size - 1) / tile_size;
+        num_tiles_y = (height + tile_size - 1) / tile_size;
+        tiles.resize(num_tiles_x * num_tiles_y);
+        const int N = field.num_points;
+        for (int i = 0; i < N; i++) {
+            float px = field.positions[i * 2 + 0];
+            float py = field.positions[i * 2 + 1];
+            float ai = field.a[i];
+            float bi = field.b[i];
+            float th = field.theta[i];
+            float cosT = cos(th);
+            float sinT = sin(th);
+            float half_w = sqrt((ai*cosT)*(ai*cosT) + (bi*sinT)*(bi*sinT));
+            float half_h = sqrt((ai*sinT)*(ai*sinT) + (bi*cosT)*(bi*cosT));
+            int tx_min = max(0, (int)floor((px - half_w) / tile_size));
+            int tx_max = min(num_tiles_x - 1, (int)floor((px + half_w) / tile_size));
+            int ty_min = max(0, (int)floor((py - half_h) / tile_size));
+            int ty_max = min(num_tiles_y - 1, (int)floor((py + half_h) / tile_size));
+            for (int ty = ty_min; ty <= ty_max; ty++) {
+                for (int tx = tx_min; tx <= tx_max; tx++) {
+                    tiles[ty * num_tiles_x + tx].push_back(i);
+                }
+            }
+        }
+    }
+
+    const std::vector<int>& get(int x, int y) const {
+        int tx = min(max(x / tile_size, 0), num_tiles_x - 1);
+        int ty = min(max(y / tile_size, 0), num_tiles_y - 1);
+        return tiles[ty * num_tiles_x + tx];
+    }
+};
+
+void render_ellipse_wendland_boxed(const EllipseWendlandField &field,
+                                   ptr<float> background_image,
+                                   ptr<float> render_image,
+                                   ptr<float> d_render_image,
+                                   ptr<float> d_positions,
+                                   ptr<float> d_colours,
+                                   ptr<float> d_a,
+                                   ptr<float> d_b,
+                                   ptr<float> d_theta,
+                                   int width,
+                                   int height) {
+    EllipseTileGrid grid(field, width, height, WENDLAND_TILE_SIZE);
+
+    std::vector<float> hist_r, hist_g, hist_b, hist_alpha;
+    std::vector<float> hist_t, hist_alpha_i;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            const std::vector<int> &ids = grid.get(x, y);
+            int M = (int)ids.size();
+            if ((int)hist_r.size() < M) {
+                hist_r.resize(M); hist_g.resize(M); hist_b.resize(M); hist_alpha.resize(M);
+                hist_t.resize(M); hist_alpha_i.resize(M);
+            }
+
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            if (background_image.get() != nullptr) {
+                int bg_index = (y * width + x) * 3;
+                accum_r = background_image.get()[bg_index + 0];
+                accum_g = background_image.get()[bg_index + 1];
+                accum_b = background_image.get()[bg_index + 2];
+                accum_alpha = 1.0f;
+            }
+
+            auto fwd_start = std::chrono::high_resolution_clock::now();
+            for (int li = 0; li < M; li++) {
+                int i = ids[li];
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
+                float ai = field.a[i];
+                float bi = field.b[i];
+                float th = field.theta[i];
+                float dx = x - px;
+                float dy = y - py;
+                float cosT = cos(th);
+                float sinT = sin(th);
+                float dxp =  cosT * dx + sinT * dy;
+                float dyp = -sinT * dx + cosT * dy;
+                float u = dxp / ai;
+                float v = dyp / bi;
+                float t = sqrt(u*u + v*v);
+                float alpha_i = 0.0f;
+                if (t < 1.0f) {
+                    float one_minus_t = 1.0f - t;
+                    float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
+                    alpha_i = w;
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+                    accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                    accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                    accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                    accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+                }
+                hist_r[li] = accum_r;
+                hist_g[li] = accum_g;
+                hist_b[li] = accum_b;
+                hist_alpha[li] = accum_alpha;
+                hist_t[li] = t;
+                hist_alpha_i[li] = alpha_i;
+            }
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_ellipse_boxed_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_ellipse_boxed_forward_pixel_calls++;
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
+            }
+
+            if (d_render_image.get() != nullptr) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f;
+                for (int li = M - 1; li >= 0; li--) {
+                    int i = ids[li];
+                    float t = hist_t[li];
+                    if (t >= 1.0f) continue;
+                    float alpha_i = hist_alpha_i[li];
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+                    float prev_r     = (li > 0) ? hist_r[li - 1]     : 0.0f;
+                    float prev_g     = (li > 0) ? hist_g[li - 1]     : 0.0f;
+                    float prev_b     = (li > 0) ? hist_b[li - 1]     : 0.0f;
+                    float prev_alpha = (li > 0) ? hist_alpha[li - 1] : 0.0f;
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+                    float px = field.positions[i * 2 + 0];
+                    float py = field.positions[i * 2 + 1];
+                    float ai = field.a[i];
+                    float bi = field.b[i];
+                    float th = field.theta[i];
+                    float dx = x - px;
+                    float dy = y - py;
+                    float cosT = cos(th);
+                    float sinT = sin(th);
+                    float dxp =  cosT * dx + sinT * dy;
+                    float dyp = -sinT * dx + cosT * dy;
+                    float u = dxp / ai;
+                    float v = dyp / bi;
+                    float one_minus_t = 1.0f - t;
+                    float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
+                    float dw_dt = -20.0f * t * one_minus_t3;
+                    float dL_dt = d_alpha_i * dw_dt;
+                    if (t > 1e-6f) {
+                        float dt_dpx = (1.0f / t) * (-(u/ai)*cosT + (v/bi)*sinT);
+                        float dt_dpy = -(1.0f / t) * ((u/ai)*sinT + (v/bi)*cosT);
+                        if (d_positions.get() != nullptr) {
+                            d_positions.get()[i * 2 + 0] += dL_dt * dt_dpx;
+                            d_positions.get()[i * 2 + 1] += dL_dt * dt_dpy;
+                        }
+                        if (d_a.get() != nullptr) {
+                            float dt_da = -(u*u) / (t * ai);
+                            d_a.get()[i] += dL_dt * dt_da;
+                        }
+                        if (d_b.get() != nullptr) {
+                            float dt_db = -(v*v) / (t * bi);
+                            d_b.get()[i] += dL_dt * dt_db;
+                        }
+                        if (d_theta.get() != nullptr) {
+                            float dt_dtheta = (dxp * dyp / t) * (1.0f/(ai*ai) - 1.0f/(bi*bi));
+                            d_theta.get()[i] += dL_dt * dt_dtheta;
+                        }
+                    }
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_ellipse_boxed_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_ellipse_boxed_backward_pixel_calls++;
+            }
+        }
+    }
+}
+
 // Timing accumulators for render_ellipse_poly (forward/backward)
 static double g_ellipse_poly_forward_time_ms = 0.0;
 static double g_ellipse_poly_backward_time_ms = 0.0;
@@ -2140,6 +2382,11 @@ PYBIND11_MODULE(diffvg, m) {
     m.def("reset_ellipse_wendland_timing", &reset_ellipse_wendland_timing, "");
     m.def("print_ellipse_wendland_timing", &print_ellipse_wendland_timing, "");
     m.def("get_ellipse_wendland_timing", &get_ellipse_wendland_timing, "");
+
+    m.def("render_ellipse_wendland_boxed", &render_ellipse_wendland_boxed, "");
+    m.def("reset_ellipse_wendland_boxed_timing", &reset_ellipse_wendland_boxed_timing, "");
+    m.def("print_ellipse_wendland_boxed_timing", &print_ellipse_wendland_boxed_timing, "");
+    m.def("get_ellipse_wendland_boxed_timing", &get_ellipse_wendland_boxed_timing, "");
 
     m.def("render_ellipse_poly", &render_ellipse_poly, "");
     m.def("reset_ellipse_poly_timing", &reset_ellipse_poly_timing, "");
