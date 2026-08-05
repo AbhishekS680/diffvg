@@ -1,8 +1,5 @@
 # comparison_shepard.py
-# Direct reconstruction: control points fit directly to the clear (original)
-# target image -- no residual/error-image step, no background compositing.
-# degraded is kept only for reference (saved + shown in the comparison grid),
-# not used in the render or the loss.
+# Direct reconstruction: control points fit directly to the clear (original) target image
 
 import argparse
 import pydiffvg
@@ -41,8 +38,7 @@ pydiffvg.imwrite(degraded.cpu(), f'{args.outdir}/init_source_degraded.png', gamm
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
 
-# Init: random positions/colors. Color init doesn't matter much since it
-# gets optimized
+# Init: random positions/colors
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
 colors = (torch.rand(N, 3)).clone().requires_grad_(True)
 optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
@@ -102,7 +98,7 @@ plt.savefig(f'{args.outdir}/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
 
-# --- Final render: this IS the reconstruction, no addition step needed ---
+# --- Final render ---
 final = pydiffvg.ShepardRenderFunction.apply(
     positions_n * torch.tensor([canvas_width, canvas_height]), colors, q, canvas_width, canvas_height)
 final = final.clamp(0, 1)
