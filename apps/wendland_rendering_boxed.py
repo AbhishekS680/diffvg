@@ -1,8 +1,6 @@
 # wendland_rendering_boxed.py
 # Same as wendland_rendering.py, but uses the tile-grid accelerated
-# renderer (EllipseWendlandBoxedRenderFunction / render_ellipse_wendland_boxed)
-# instead of the original brute-force one. Kept as a separate file so
-# wendland_rendering.py stays untouched.
+# renderer
 
 import pydiffvg
 import diffvg

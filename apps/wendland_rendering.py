@@ -1,6 +1,7 @@
 # wendland_rendering.py
 # Anisotropic Wendland C2 kernel field renderer
 # The kernel's influence isn't the same in every direction
+
 import pydiffvg
 import diffvg
 import torch

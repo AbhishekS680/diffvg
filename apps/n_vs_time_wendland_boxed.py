@@ -2,7 +2,6 @@
 # Measures forward+backward render time as N (number of ellipses) increases,
 # using the tile-grid accelerated renderer (EllipseWendlandBoxedRenderFunction).
 # One forward+backward pass per N value
-# Not a full training run, since we're isolating per-pass renderer cost
 
 import pydiffvg
 import diffvg

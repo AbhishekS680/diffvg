@@ -2,6 +2,7 @@
 # Finite-difference gradient check for EllipseWendlandRenderFunction.
 # Confirms the hand-derived backward pass (dt/da, dt/db, dt/dtheta, dt/dposition)
 # matches a numerical estimate of the same gradients.
+
 import pydiffvg
 import torch
 
