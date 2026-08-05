@@ -1898,10 +1898,10 @@ py::tuple get_ellipse_wendland_boxed_timing() {
 }
 
 // Buckets ellipses into a grid of tiles. Each ellipse is registered in
-// every tile its exact axis-aligned bounding box overlaps -- a pixel
-// outside that box is guaranteed to have t >= 1 for that ellipse (exact
-// prune, not an approximation).
-constexpr int WENDLAND_TILE_SIZE = 64; // pixels per tile side, change if needed
+// every tile its exact axis-aligned bounding box overlaps
+// a pixel outside that box is guaranteed to have t >= 1 for that ellipse
+
+constexpr int WENDLAND_TILE_SIZE = 64; // pixels per tile side, can modify
 
 struct EllipseTileGrid {
     int tile_size;
@@ -1917,20 +1917,28 @@ struct EllipseTileGrid {
         for (int i = 0; i < N; i++) {
             float px = field.positions[i * 2 + 0];
             float py = field.positions[i * 2 + 1];
-            float ai = field.a[i];
-            float bi = field.b[i];
-            float th = field.theta[i];
+            float ai = field.a[i]; // ellipse i's semi-axis length a
+            float bi = field.b[i]; // // ellipse i's semi-axis length b
+            float th = field.theta[i]; // ellipse i rotation angle
             float cosT = cos(th);
             float sinT = sin(th);
+
+            // Used to calculate the bounding box for an ellipse
             float half_w = sqrt((ai*cosT)*(ai*cosT) + (bi*sinT)*(bi*sinT));
             float half_h = sqrt((ai*sinT)*(ai*sinT) + (bi*cosT)*(bi*cosT));
+
+            // which tile columns the box spans
             int tx_min = max(0, (int)floor((px - half_w) / tile_size));
             int tx_max = min(num_tiles_x - 1, (int)floor((px + half_w) / tile_size));
+
+            // which tile rows the box spans
             int ty_min = max(0, (int)floor((py - half_h) / tile_size));
             int ty_max = min(num_tiles_y - 1, (int)floor((py + half_h) / tile_size));
+
+            // register this ellipse in every tile its box overlaps
             for (int ty = ty_min; ty <= ty_max; ty++) {
                 for (int tx = tx_min; tx <= tx_max; tx++) {
-                    tiles[ty * num_tiles_x + tx].push_back(i);
+                    tiles[ty * num_tiles_x + tx].push_back(i); // Fills a tile's list
                 }
             }
         }
@@ -1939,7 +1947,7 @@ struct EllipseTileGrid {
     const std::vector<int>& get(int x, int y) const {
         int tx = min(max(x / tile_size, 0), num_tiles_x - 1);
         int ty = min(max(y / tile_size, 0), num_tiles_y - 1);
-        return tiles[ty * num_tiles_x + tx];
+        return tiles[ty * num_tiles_x + tx]; // List created for each tile
     }
 };
 
@@ -1961,8 +1969,8 @@ void render_ellipse_wendland_boxed(const EllipseWendlandField &field,
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            const std::vector<int> &ids = grid.get(x, y);
-            int M = (int)ids.size();
+            const std::vector<int> &ids = grid.get(x, y); // Looks in list of ellipse indices that were filled into the tile this pixel is in
+            int M = (int)ids.size(); // M is how many ellipses are in that pixel's list
             if ((int)hist_r.size() < M) {
                 hist_r.resize(M); hist_g.resize(M); hist_b.resize(M); hist_alpha.resize(M);
                 hist_t.resize(M); hist_alpha_i.resize(M);
@@ -1978,7 +1986,7 @@ void render_ellipse_wendland_boxed(const EllipseWendlandField &field,
             }
 
             auto fwd_start = std::chrono::high_resolution_clock::now();
-            for (int li = 0; li < M; li++) {
+            for (int li = 0; li < M; li++) { // How many ellipses that are near the pixel
                 int i = ids[li];
                 float px = field.positions[i * 2 + 0];
                 float py = field.positions[i * 2 + 1];
