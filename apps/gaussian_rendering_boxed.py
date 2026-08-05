@@ -1,8 +1,6 @@
 # gaussian_rendering_boxed.py
 # Same as gaussian_rendering.py, but uses the tile-grid accelerated
-# renderer (EllipseGaussianBoxedRenderFunction / render_ellipse_gaussian_boxed)
-# instead of the original brute-force one. Kept as a separate file so
-# gaussian_rendering.py stays untouched.
+# renderer
 
 import pydiffvg
 import diffvg

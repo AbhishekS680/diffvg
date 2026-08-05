@@ -1,9 +1,6 @@
 # comparison_gaussian.py
 # Direct reconstruction: canvas starts as the blurry (degraded) image,
-# ellipses composite directly on top of it (same alpha-over math as before),
-# and loss compares the result straight to the clear (original) target.
-# No residual/error-image step, no "add correction back" at the end --
-# the rendered output IS the reconstruction.
+# ellipses composite directly on top of it
 
 import argparse
 import pydiffvg
@@ -42,8 +39,7 @@ pydiffvg.imwrite(degraded.cpu(), f'{args.outdir}/init_source_degraded.png', gamm
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
 
-# Init: random positions/shape/color. Color init doesn't matter much since
-# it gets optimized -- confirmed with Dr. Mould.
+# Init: random positions/shape/colour
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
 colors = (torch.rand(N, 3)).clone().requires_grad_(True)
 log_a = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
@@ -53,8 +49,7 @@ optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2
 loss_history = []
 diffvg.reset_ellipse_gaussian_timing()
 
-# --- Optimization loop: ellipses composited on top of the blurry image,
-#     compared directly against the clear image ---
+# --- Optimization loop ---
 for t in range(iters):
     optimizer.zero_grad()
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
@@ -99,7 +94,7 @@ plt.savefig(f'{args.outdir}/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
 
-# --- Final render: this IS the reconstruction, no addition step needed ---
+# --- Final render ---
 positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
 a_px = torch.exp(log_a) * canvas_width
 b_px = torch.exp(log_b) * canvas_width

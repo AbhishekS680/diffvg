@@ -86,8 +86,7 @@ print('saved loss_curve.png')
 
 # -------------------------------------------------------------------
 # Kernel shape plot: Gaussian (sigma=1/3) vs Wendland C2 reference.
-# Fixed kernel, so nothing to track over training -- just a static
-# comparison of the two formulas.
+# A static comparison of the two formulas.
 # -------------------------------------------------------------------
 t_range = torch.linspace(0, 1, 200)
 sigma = 1.0 / 3.0

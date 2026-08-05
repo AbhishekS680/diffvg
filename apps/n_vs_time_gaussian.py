@@ -1,7 +1,6 @@
 # n_vs_time_gaussian.py
 # Measures forward+backward render time as N (number of ellipses) increases
 # One forward+backward pass per N value
-# Not a full training run, since we're isolating per-pass renderer cost
 
 import pydiffvg
 import diffvg
