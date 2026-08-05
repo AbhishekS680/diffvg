@@ -1,7 +1,6 @@
 # n_vs_time_shepard.py
 # Measures forward+backward render time as N (number of control points) increases
 # One forward+backward pass per N value
-# Not a full training run, since we're isolating per-pass renderer cost
 
 import pydiffvg
 import diffvg
@@ -14,7 +13,7 @@ import matplotlib.pyplot as plt
 import os
 import time
 
-# Fixed target image so canvas size doesn't confound the N sweep
+# Fixed target image
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
