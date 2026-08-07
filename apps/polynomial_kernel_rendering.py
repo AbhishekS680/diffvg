@@ -26,8 +26,8 @@ canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/polynomial_kernel_rendering/target.png', gamma=1.0)
 positions_n = torch.rand(N, 2).clone().requires_grad_(True) # normalized [0,1]
 colors      = torch.rand(N, 3).clone().requires_grad_(True)
-log_a       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
-log_b       = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
+log_a       = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
+log_b       = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
 theta       = torch.zeros(N).clone().requires_grad_(True)
 
 # Polynomial kernel coefficients: f(t) = a*t^4 + b*t^3 + c*t^2 + d*t + e
