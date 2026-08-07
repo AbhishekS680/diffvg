@@ -80,8 +80,19 @@ class Build(build_ext):
                 cmake_args += ['-DDIFFVG_CUDA=0']
 
             env = os.environ.copy()
-            env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
-                                                                  self.distribution.get_version())
+            cxxflags = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
+                                                             self.distribution.get_version())
+            if platform.system() == "Darwin":
+                # Recent AppleClang/Xcode (libc++ from Clang 19+) fully removed
+                # the internal _VSTD macro that older thrust releases (up to at
+                # least 1.17.x) still rely on in
+                # thrust/type_traits/is_contiguous_iterator.h, causing
+                # "use of undeclared identifier '_VSTD'". _VSTD used to be a
+                # plain alias for std in libc++, so defining it ourselves on
+                # the command line reproduces the same behavior without
+                # needing to patch the thrust submodule's source directly.
+                cxxflags += ' -D_VSTD=std'
+            env['CXXFLAGS'] = cxxflags
             if not os.path.exists(self.build_temp):
                 os.makedirs(self.build_temp)
             subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
