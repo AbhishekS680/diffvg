@@ -14,8 +14,8 @@ import numpy as np
 from matplotlib.patches import Ellipse
 
 os.makedirs('results/ellipse_diffvg', exist_ok=True)
-N = 1000
-iters = 500
+N = 10000
+iters = 1000
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
