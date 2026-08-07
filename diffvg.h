@@ -1,11 +1,9 @@
 #pragma once
-
 #ifdef __NVCC__ 
     #define DEVICE __device__ __host__ 
 #else
     #define DEVICE
 #endif
-
 #ifndef __NVCC__
     #include <cmath>
     namespace {
@@ -18,31 +16,25 @@
     }
     using std::isfinite;
 #endif
-
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
 #include <cstdint>
 #include <atomic>
-
 // We use Real for most of the internal computation.
 // However, for PyTorch interfaces, Optix Prime and Embree queries
 // we use float
 using Real = float;
-
 template <typename T>
 DEVICE
 inline T square(const T &x) {
     return x * x;
 }
-
 template <typename T>
 DEVICE
 inline T cubic(const T &x) {
     return x * x * x;
 }
-
 template <typename T>
 DEVICE
 inline T clamp(const T &v, const T &lo, const T &hi) {
@@ -50,42 +42,35 @@ inline T clamp(const T &v, const T &lo, const T &hi) {
     else if (v > hi) return hi;
     else return v;
 }
-
 DEVICE
 inline int modulo(int a, int b) {
     auto r = a % b;
     return (r < 0) ? r+b : r;
 }
-
 DEVICE
 inline float modulo(float a, float b) {
     float r = ::fmodf(a, b);
     return (r < 0.0f) ? r+b : r;
 }
-
 DEVICE
 inline double modulo(double a, double b) {
     double r = ::fmod(a, b);
     return (r < 0.0) ? r+b : r;
 }
-
 template <typename T>
 DEVICE
 inline T max(const T &a, const T &b) {
     return a > b ? a : b;
 }
-
 template <typename T>
 DEVICE
 inline T min(const T &a, const T &b) {
     return a < b ? a : b;
 }
-
 /// Return ceil(x/y) for integers x and y
 inline int idiv_ceil(int x, int y) {
     return (x + y-1) / y;
 }
-
 template <typename T>
 DEVICE
 inline void swap_(T &a, T &b) {
@@ -93,11 +78,14 @@ inline void swap_(T &a, T &b) {
     a = b;
     b = tmp;
 }
-
+// MSVC treats log2 as a compiler intrinsic and errors (C2169) if user code
+// tries to redefine it. Clang/GCC don't provide it as a hard intrinsic here,
+// so we still define our own fallback on those compilers.
+#ifndef _MSC_VER
 inline double log2(double x) {
     return log(x) / log(Real(2));
 }
-
+#endif
 template <typename T>
 DEVICE
 inline T safe_acos(const T &x) {
@@ -105,7 +93,6 @@ inline T safe_acos(const T &x) {
     else if(x <= -1) return T(M_PI);
     return acos(x);
 }
-
 // For Morton code computation. This can be made faster.
 DEVICE
 inline uint32_t expand_bits(uint32_t x) {
@@ -124,7 +111,6 @@ inline uint32_t expand_bits(uint32_t x) {
     result |= ((x & (mask << 9u)) << 9u);
     return result;
 }
-
 // DEVICE
 // inline int clz(uint64_t x) {
 // #ifdef __CUDA_ARCH__
@@ -134,7 +120,6 @@ inline uint32_t expand_bits(uint32_t x) {
 //     return x == 0 ? 64 : __builtin_clzll(x);
 // #endif
 // }
-
 // DEVICE
 // inline int ffs(uint8_t x) {
 // #ifdef __CUDA_ARCH__
@@ -144,7 +129,6 @@ inline uint32_t expand_bits(uint32_t x) {
 //     return __builtin_ffs(x);
 // #endif
 // }
-
 // DEVICE
 // inline int popc(uint8_t x) {
 // #ifdef __CUDA_ARCH__
