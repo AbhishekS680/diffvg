@@ -27,8 +27,8 @@ pydiffvg.imwrite(target.cpu(), 'results/ellipse_diffvg/target.png', gamma=1.0)
 # Same init convention as the Wendland script: normalized position [0,1],
 # log-space semi-axes so they stay positive, start as circles.
 positions_n = torch.rand(N, 2).clone().requires_grad_(True)
-log_a = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
-log_b = torch.full((N,), torch.log(torch.tensor(0.15))).clone().requires_grad_(True)
+log_a = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
+log_b = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
 
 # RGB is learnable; alpha is fixed at 1.0 (not in the optimizer) so these
 # stay genuinely hard-edged/opaque, matching the "baseline" framing --
