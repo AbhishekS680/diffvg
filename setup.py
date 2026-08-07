@@ -34,11 +34,33 @@ class Build(build_ext):
             info = get_paths()
             include_path = info['include']
             cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                          '-DPYTHON_LIBRARY=' + get_config_var('LIBDIR'),
                           '-DPYTHON_INCLUDE_PATH=' + include_path,
                           '-DPYTHON_EXECUTABLE=' + sys.executable,
                           '-DPython_EXECUTABLE=' + sys.executable,
                           '-DPython_ROOT_DIR=' + sys.prefix]
+            # get_config_var('LIBDIR') returns None on Windows (it's a Unix
+            # concept) -- only pass -DPYTHON_LIBRARY when we actually have a
+            # value, otherwise str + None crashes.
+            python_libdir = get_config_var('LIBDIR')
+            if python_libdir is not None:
+                cmake_args.append('-DPYTHON_LIBRARY=' + python_libdir)
+            # On Windows, CMake's FindPython can pick up a *different* Python
+            # install (e.g. a system-wide one) than the conda env actually
+            # running this script, even with Python_ROOT_DIR set. That causes
+            # a link failure: the compiled objects reference pythonXY.lib
+            # matching THIS interpreter's version, but the linker gets pointed
+            # at a different install's libs folder that doesn't have that
+            # file. Force it explicitly using this interpreter's own version
+            # and prefix, which is unambiguous.
+            if platform.system() == "Windows":
+                py_lib_name = 'python{}{}.lib'.format(sys.version_info.major, sys.version_info.minor)
+                py_lib_path = os.path.join(sys.prefix, 'libs', py_lib_name)
+                if os.path.exists(py_lib_path):
+                    cmake_args.append('-DPython_LIBRARY=' + py_lib_path)
+                    cmake_args.append('-DPYTHON_LIBRARY=' + py_lib_path)
+                else:
+                    print('WARNING: expected Python import library not found at {} -- '
+                          'link step may fail or pick the wrong Python.'.format(py_lib_path))
             cfg = 'Debug' if self.debug else 'Release'
             build_args = ['--config', cfg]
 
