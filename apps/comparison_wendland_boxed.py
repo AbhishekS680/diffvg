@@ -24,6 +24,14 @@ os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 N = 10000
 iters = 500
 
+# --- Semi-axis size penalty ---
+# Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
+# penalty: zero below the threshold, then grows smoothly, so Adam gets a
+# real gradient pushing oversized ellipses back down instead of a hard
+# clamp (no gradient) or a discontinuous jump (unstable).
+MAX_AXIS_PX = 10.0
+AXIS_PENALTY_WEIGHT = 1.0
+
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---
@@ -58,6 +66,12 @@ for t in range(iters):
     img = pydiffvg.EllipseWendlandBoxedRenderFunction.apply(
         positions_px, colors, a_px, b_px, theta, degraded, canvas_width, canvas_height)
     loss = (img - original).pow(2).sum()
+
+    # Soft penalty on oversized semi-axes: zero contribution while a/b stay
+    # under MAX_AXIS_PX, quadratic growth past it.
+    axis_penalty = (torch.clamp(a_px - MAX_AXIS_PX, min=0).pow(2).sum()
+                    + torch.clamp(b_px - MAX_AXIS_PX, min=0).pow(2).sum())
+    loss = loss + AXIS_PENALTY_WEIGHT * axis_penalty
     loss_history.append(loss.item())
     loss.backward()
     print('iter', t, 'loss', loss.item())
@@ -66,6 +80,7 @@ for t in range(iters):
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
     optimizer.step()
+
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
     with torch.no_grad():
