@@ -17,7 +17,7 @@ import diffvg
 # --- Parameters ---
 N_per_segment = 100 # control points per segment
 q = 3.0
-iters = 500
+iters = 100
 seg_size = 0.2 # controls segment size, a larger value means fewer but bigger segments
 
 # --- Load target image ---
