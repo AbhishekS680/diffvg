@@ -24,6 +24,14 @@ os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 N = 10000
 iters = 500
 
+# --- Semi-axis size penalty ---
+# Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
+# penalty: zero below the threshold, then grows smoothly, so Adam gets a
+# real gradient pushing oversized ellipses back down instead of a hard
+# clamp (no gradient) or a discontinuous jump (unstable).
+MAX_AXIS_PX = 10.0
+AXIS_PENALTY_WEIGHT = 1.0
+
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---
@@ -49,6 +57,9 @@ optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=1e-2
 loss_history = []
 diffvg.reset_ellipse_gaussian_boxed_timing()
 
+# Clear old axis-penalty log before a fresh run
+open(f'{args.outdir}/axis_penalty_log.txt', 'w').close()
+
 # --- Optimization loop ---
 for t in range(iters):
     optimizer.zero_grad()
@@ -58,6 +69,12 @@ for t in range(iters):
     img = pydiffvg.EllipseGaussianBoxedRenderFunction.apply(
         positions_px, colors, a_px, b_px, theta, degraded, canvas_width, canvas_height)
     loss = (img - original).pow(2).sum()
+
+    # Soft penalty on oversized semi-axes: zero contribution while a/b stay
+    # under MAX_AXIS_PX, quadratic growth past it.
+    axis_penalty = (torch.clamp(a_px - MAX_AXIS_PX, min=0).pow(2).sum()
+                    + torch.clamp(b_px - MAX_AXIS_PX, min=0).pow(2).sum())
+    loss = loss + AXIS_PENALTY_WEIGHT * axis_penalty
     loss_history.append(loss.item())
     loss.backward()
     print('iter', t, 'loss', loss.item())
@@ -65,7 +82,16 @@ for t in range(iters):
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
+    n_over = int(((a_px.detach() > MAX_AXIS_PX) | (b_px.detach() > MAX_AXIS_PX)).sum().item())
+    with open(f'{args.outdir}/axis_penalty_log.txt', 'a') as f:
+        f.write(f'iter {t}: penalty={axis_penalty.item():.6f} '
+                f'n_over_threshold={n_over}/{N} '
+                f'a[min={a_px.detach().min().item():.3f} max={a_px.detach().max().item():.3f} '
+                f'mean={a_px.detach().mean().item():.3f}] '
+                f'b[min={b_px.detach().min().item():.3f} max={b_px.detach().max().item():.3f} '
+                f'mean={b_px.detach().mean().item():.3f}]\n')
     optimizer.step()
+
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
     with torch.no_grad():
