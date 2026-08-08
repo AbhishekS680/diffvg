@@ -17,7 +17,7 @@ from matplotlib.patches import Ellipse
 os.makedirs('results/polynomial_kernel_rendering', exist_ok=True)
 
 N = 10000
-iters = 1000 # High iteration number for learning the polynomial kernel coefficients
+iters = 500 # High iteration number for learning the polynomial kernel coefficients
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
