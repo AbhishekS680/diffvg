@@ -61,7 +61,9 @@ for t in range(iters):
     repulsion = (1.0 / dist_sq * eye_mask).sum()
     loss = loss + 0.01 * repulsion
     loss_history.append(loss.item())
+
     loss.backward()
+    
     pos_grad_norms = positions_n.grad.norm(dim=1)
     color_grad_norms = colors.grad.norm(dim=1)
     print('iter', t, 'loss', loss.item())
