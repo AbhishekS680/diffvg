@@ -1,7 +1,6 @@
 # wendland_rendering_boxed.py
 # Same as wendland_rendering.py, but uses the tile-grid accelerated
 # renderer
-
 import pydiffvg
 import diffvg
 import torch
@@ -45,6 +44,9 @@ loss_history = []
 
 diffvg.reset_ellipse_wendland_boxed_timing()
 
+# Clear old axis-penalty log before a fresh run
+open('results/wendland_rendering_boxed/axis_penalty_log.txt', 'w').close()
+
 # --------------------------------------
 # Run Adam iterations.
 # --------------------------------------
@@ -69,6 +71,14 @@ for t in range(iters):
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
+    n_over = int(((a_px.detach() > MAX_AXIS_PX) | (b_px.detach() > MAX_AXIS_PX)).sum().item())
+    with open('results/wendland_rendering_boxed/axis_penalty_log.txt', 'a') as f:
+        f.write(f'iter {t}: penalty={axis_penalty.item():.6f} '
+                f'n_over_threshold={n_over}/{N} '
+                f'a[min={a_px.detach().min().item():.3f} max={a_px.detach().max().item():.3f} '
+                f'mean={a_px.detach().mean().item():.3f}] '
+                f'b[min={b_px.detach().min().item():.3f} max={b_px.detach().max().item():.3f} '
+                f'mean={b_px.detach().mean().item():.3f}]\n')
     optimizer.step()  # Adam reads .grad -> moves positions_n, colors, log_a, log_b, theta
 
     if t == iters - 2:
@@ -112,9 +122,10 @@ b_px = torch.exp(log_b) * canvas_width
 final = pydiffvg.EllipseWendlandBoxedRenderFunction.apply(positions_px, colors, a_px, b_px, theta, None, canvas_width, canvas_height)
 pydiffvg.imwrite(final.clamp(0, 1).cpu(), 'results/wendland_rendering_boxed/final.png', gamma=1.0)
 
-# ------------------------------------------------------------------------------------------
-# Visualization: overlay ellipse boundaries and control point locations on the final render
-# ------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Visualization: overlay ellipse boundaries and control point locations
+# on the final render.
+# -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
 fig.patch.set_facecolor('black')
 display_img = final.detach().clamp(0, 1).cpu().numpy()
