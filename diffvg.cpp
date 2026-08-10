@@ -22,6 +22,9 @@
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 
+#include <vector>
+#include <chrono>
+
 namespace py = pybind11;
 
 struct Command {
@@ -1648,8 +1651,260 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
+// Timing accumulators for render_trianglesoup (forward/backward)
+static double g_trianglesoup_forward_time_ms = 0.0;
+static double g_trianglesoup_backward_time_ms = 0.0;
+static long long g_trianglesoup_forward_pixel_calls = 0;
+static long long g_trianglesoup_backward_pixel_calls = 0;
+
+void reset_trianglesoup_timing() {
+    g_trianglesoup_forward_time_ms = 0.0;
+    g_trianglesoup_backward_time_ms = 0.0;
+    g_trianglesoup_forward_pixel_calls = 0;
+    g_trianglesoup_backward_pixel_calls = 0;
+}
+void print_trianglesoup_timing() {
+    printf("---- render_trianglesoup timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_trianglesoup_forward_time_ms, g_trianglesoup_forward_pixel_calls,
+           g_trianglesoup_forward_pixel_calls > 0 ? g_trianglesoup_forward_time_ms / g_trianglesoup_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_trianglesoup_backward_time_ms, g_trianglesoup_backward_pixel_calls,
+           g_trianglesoup_backward_pixel_calls > 0 ? g_trianglesoup_backward_time_ms / g_trianglesoup_backward_pixel_calls : 0.0);
+}
+py::tuple get_trianglesoup_timing() {
+    return py::make_tuple(g_trianglesoup_forward_time_ms, g_trianglesoup_forward_pixel_calls,
+                           g_trianglesoup_backward_time_ms, g_trianglesoup_backward_pixel_calls);
+}
+
+// Triangle soup: N independent triangles (no shared vertices/edges, unlike
+// a mesh), each with a flat colour, composited via alpha-over in index
+// order (painter's algorithm -- triangle N-1 painted last, on top).
+//
+// Coverage per triangle per pixel uses soft rasterization: each of the 3
+// edges gets a sigmoid-smoothed "inside" test (a plain point-in-triangle
+// test is a step function with zero gradient almost everywhere, which
+// would give no signal for moving vertices). This mirrors exactly what
+// the PyTorch prototype (trianglesoup_prototype.py) does, so the C++
+// forward pass should reproduce the same renders once ported.
+//
+// Backward pass derives closed-form gradients through the sigmoid-edge
+// coverage function analytically (equivalent to what autograd computed
+// in the PyTorch prototype), following the same history-buffer pattern
+// as render_ellipse_wendland: recompute each triangle's geometry in the
+// backward loop rather than caching it, only the running alpha-composite
+// state (hist_r/g/b/alpha) and each triangle's alpha_i are cached.
+void render_trianglesoup(const TriangleSoupField &field,
+                         ptr<float> background_image,
+                         ptr<float> render_image,
+                         ptr<float> d_render_image,
+                         ptr<float> d_vertices,
+                         ptr<float> d_colours,
+                         int width,
+                         int height) {
+    const int N = field.num_triangles;
+    const float S = field.softness;
+    std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N), hist_alpha_i(N);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            if (background_image.get() != nullptr) {
+                int bg_index = (y * width + x) * 3;
+                accum_r = background_image.get()[bg_index + 0];
+                accum_g = background_image.get()[bg_index + 1];
+                accum_b = background_image.get()[bg_index + 2];
+                accum_alpha = 1.0f;
+            }
+
+            auto fwd_start = std::chrono::high_resolution_clock::now();
+            for (int i = 0; i < N; i++) {
+                float v0x = field.vertices[i * 6 + 0];
+                float v0y = field.vertices[i * 6 + 1];
+                float v1x = field.vertices[i * 6 + 2];
+                float v1y = field.vertices[i * 6 + 3];
+                float v2x = field.vertices[i * 6 + 4];
+                float v2y = field.vertices[i * 6 + 5];
+
+                // Signed edge functions, same convention as the PyTorch
+                // prototype's edge_fn(a, b, p).
+                float e0 = (x - v0x) * (v1y - v0y) - (y - v0y) * (v1x - v0x);
+                float e1 = (x - v1x) * (v2y - v1y) - (y - v1y) * (v2x - v1x);
+                float e2 = (x - v2x) * (v0y - v2y) - (y - v2y) * (v0x - v2x);
+
+                float s0 = 1.0f / (1.0f + exp(-e0 / S));
+                float s1 = 1.0f / (1.0f + exp(-e1 / S));
+                float s2 = 1.0f / (1.0f + exp(-e2 / S));
+
+                float cov_pos = s0 * s1 * s2;
+                float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
+                float alpha_i = max(cov_pos, cov_neg);
+
+                float color_r = field.colours[i * 3 + 0];
+                float color_g = field.colours[i * 3 + 1];
+                float color_b = field.colours[i * 3 + 2];
+
+                accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+
+                hist_r[i] = accum_r;
+                hist_g[i] = accum_g;
+                hist_b[i] = accum_b;
+                hist_alpha[i] = accum_alpha;
+                hist_alpha_i[i] = alpha_i;
+            }
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_trianglesoup_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_trianglesoup_forward_pixel_calls++;
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
+            }
+
+            // ---------- Backward pass ----------
+            if (d_render_image.get() != nullptr) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f;
+
+                for (int i = N - 1; i >= 0; i--) {
+                    float alpha_i = hist_alpha_i[i];
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    float prev_r     = (i > 0) ? hist_r[i - 1]     : 0.0f;
+                    float prev_g     = (i > 0) ? hist_g[i - 1]     : 0.0f;
+                    float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
+                    float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
+
+                    // Over-operator backward (same as render_ellipse_wendland)
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    // Recompute this triangle's geometry (not cached, same
+                    // pattern as Wendland recomputing px/py/ai/bi/theta).
+                    float v0x = field.vertices[i * 6 + 0];
+                    float v0y = field.vertices[i * 6 + 1];
+                    float v1x = field.vertices[i * 6 + 2];
+                    float v1y = field.vertices[i * 6 + 3];
+                    float v2x = field.vertices[i * 6 + 4];
+                    float v2y = field.vertices[i * 6 + 5];
+
+                    float e0 = (x - v0x) * (v1y - v0y) - (y - v0y) * (v1x - v0x);
+                    float e1 = (x - v1x) * (v2y - v1y) - (y - v1y) * (v2x - v1x);
+                    float e2 = (x - v2x) * (v0y - v2y) - (y - v2y) * (v0x - v2x);
+
+                    float s0 = 1.0f / (1.0f + exp(-e0 / S));
+                    float s1 = 1.0f / (1.0f + exp(-e1 / S));
+                    float s2 = 1.0f / (1.0f + exp(-e2 / S));
+
+                    float cov_pos = s0 * s1 * s2;
+                    float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
+                    bool use_pos = cov_pos >= cov_neg;
+
+                    // d(coverage)/d(s_k), picking whichever branch was
+                    // actually used in the forward pass (matches
+                    // torch.maximum's subgradient behavior).
+                    float dcov_ds0, dcov_ds1, dcov_ds2;
+                    if (use_pos) {
+                        dcov_ds0 = s1 * s2;
+                        dcov_ds1 = s0 * s2;
+                        dcov_ds2 = s0 * s1;
+                    } else {
+                        dcov_ds0 = -(1.0f - s1) * (1.0f - s2);
+                        dcov_ds1 = -(1.0f - s0) * (1.0f - s2);
+                        dcov_ds2 = -(1.0f - s0) * (1.0f - s1);
+                    }
+
+                    // d(sigmoid(e/S))/d(e) = s*(1-s)/S
+                    float ds0_de0 = s0 * (1.0f - s0) / S;
+                    float ds1_de1 = s1 * (1.0f - s1) / S;
+                    float ds2_de2 = s2 * (1.0f - s2) / S;
+
+                    // Gradient flowing into each edge function
+                    float g0 = d_alpha_i * dcov_ds0 * ds0_de0;
+                    float g1 = d_alpha_i * dcov_ds1 * ds1_de1;
+                    float g2 = d_alpha_i * dcov_ds2 * ds2_de2;
+
+                    // Partial derivatives of each edge function w.r.t. the
+                    // two vertices it depends on (e0 depends on v0,v1;
+                    // e1 depends on v1,v2; e2 depends on v2,v0).
+                    float de0_dv0x = -(v1y - v0y) + (y - v0y);
+                    float de0_dv0y = -(x - v0x) + (v1x - v0x);
+                    float de0_dv1x = -(y - v0y);
+                    float de0_dv1y =  (x - v0x);
+
+                    float de1_dv1x = -(v2y - v1y) + (y - v1y);
+                    float de1_dv1y = -(x - v1x) + (v2x - v1x);
+                    float de1_dv2x = -(y - v1y);
+                    float de1_dv2y =  (x - v1x);
+
+                    float de2_dv2x = -(v0y - v2y) + (y - v2y);
+                    float de2_dv2y = -(x - v2x) + (v0x - v2x);
+                    float de2_dv0x = -(y - v2y);
+                    float de2_dv0y =  (x - v2x);
+
+                    if (d_vertices.get() != nullptr) {
+                        // v0 receives contributions from e0 and e2
+                        d_vertices.get()[i * 6 + 0] += g0 * de0_dv0x + g2 * de2_dv0x;
+                        d_vertices.get()[i * 6 + 1] += g0 * de0_dv0y + g2 * de2_dv0y;
+                        // v1 receives contributions from e0 and e1
+                        d_vertices.get()[i * 6 + 2] += g0 * de0_dv1x + g1 * de1_dv1x;
+                        d_vertices.get()[i * 6 + 3] += g0 * de0_dv1y + g1 * de1_dv1y;
+                        // v2 receives contributions from e1 and e2
+                        d_vertices.get()[i * 6 + 4] += g1 * de1_dv2x + g2 * de2_dv2x;
+                        d_vertices.get()[i * 6 + 5] += g1 * de1_dv2y + g2 * de2_dv2y;
+                    }
+
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_trianglesoup_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_trianglesoup_backward_pixel_calls++;
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
+
+    py::class_<TriangleSoupField>(m, "TriangleSoupField")
+        .def(py::init<ptr<float>, ptr<float>, float, int>())
+        .def("get_ptr", &TriangleSoupField::get_ptr)
+        .def_readonly("num_triangles", &TriangleSoupField::num_triangles);
+    m.def("render_trianglesoup", &render_trianglesoup, "");
+    m.def("reset_trianglesoup_timing", &reset_trianglesoup_timing, "");
+    m.def("print_trianglesoup_timing", &print_trianglesoup_timing, "");
+    m.def("get_trianglesoup_timing", &get_trianglesoup_timing, "");
 
     py::class_<ptr<void>>(m, "void_ptr")
         .def(py::init<std::size_t>())

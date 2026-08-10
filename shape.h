@@ -102,6 +102,28 @@ struct Shape {
     float stroke_width;
 };
 
+struct TriangleSoupField {
+    TriangleSoupField(ptr<float> vertices,
+                       ptr<float> colours,
+                       float softness,
+                       int num_triangles) :
+        vertices(vertices.get()),
+        colours(colours.get()),
+        softness(softness),
+        num_triangles(num_triangles) {}
+    // Per triangle: v0x, v0y, v1x, v1y, v2x, v2y (pixel space)
+    float *vertices;
+    // Per triangle: r, g, b (flat colour, no interpolation)
+    float *colours;
+    // Edge blur width in pixels -- larger = softer edges, stronger
+    // gradients; smaller = sharper edges, weaker gradients near boundary.
+    float softness;
+    int num_triangles;
+    ptr<void> get_ptr() {
+        return ptr<void>(this);
+    }
+};
+
 struct ShapeGroup {
     ShapeGroup() {}
     ShapeGroup(ptr<int> shape_ids,
