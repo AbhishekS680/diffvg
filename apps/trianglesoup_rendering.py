@@ -1,7 +1,8 @@
 # trianglesoup_rendering.py
 # Independent triangles (no shared vertices/edges, unlike a mesh), each
-# with a flat colour, composited via alpha-over in index order. Uses the
-# C++ TriangleSoupRenderFunction ported from trianglesoup_prototype.py.
+# with a flat colour and a learnable opacity, composited via alpha-over
+# in index order. Uses the C++ TriangleSoupRenderFunction ported from
+# trianglesoup_prototype.py.
 import pydiffvg
 import diffvg
 import torch
@@ -35,17 +36,23 @@ target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/trianglesoup_rendering/target.png', gamma=1.0)
 
-# Initialize N triangles (vertices, colour) randomly
+# Initialize N triangles (vertices, colour, opacity) randomly
 vertices_n = torch.rand(N, 3, 2).clone().requires_grad_(True)  # normalized [0,1]
 colours    = torch.rand(N, 3).clone().requires_grad_(True)
-optimizer = torch.optim.Adam([vertices_n, colours], lr=1e-2)
+# Opacity logit: unconstrained real parameter, squashed through sigmoid
+# before being used. Init at 0 -> sigmoid(0) = 0.5, a neutral starting
+# opacity (neither fully opaque nor invisible), same reasoning as why
+# a fresh triangle shouldn't start either fully blocking or fully
+# transparent -- both extremes give weak initial gradients.
+opacity_logit = torch.zeros(N).clone().requires_grad_(True)
+optimizer = torch.optim.Adam([vertices_n, colours, opacity_logit], lr=1e-2)
 loss_history = []
 
 diffvg.reset_trianglesoup_timing()
 
-# Clear old axis-penalty-style log before a fresh run (softness log, same
-# pattern as the Wendland/Gaussian axis_penalty_log.txt)
+# Clear old logs before a fresh run
 open('results/trianglesoup_rendering/softness_log.txt', 'w').close()
+open('results/trianglesoup_rendering/opacity_log.txt', 'w').close()
 
 # --------------------------------------
 # Run Adam iterations.
@@ -54,15 +61,22 @@ for t in range(iters):
     optimizer.zero_grad()
     softness = SOFTNESS_START + (SOFTNESS_END - SOFTNESS_START) * (t / max(iters - 1, 1))
     vertices_px = vertices_n * torch.tensor([canvas_width, canvas_height])
+    opacity = torch.sigmoid(opacity_logit)
     img = pydiffvg.TriangleSoupRenderFunction.apply(
-        vertices_px, colours, softness, None, canvas_width, canvas_height)
+        vertices_px, colours, opacity, softness, None, canvas_width, canvas_height)
     loss = (img - target).pow(2).sum()  # how wrong is the current render
     loss_history.append(loss.item())
     loss.backward()  # backward -> C++ fills gradients -> deposits into .grad
     print('iter', t, 'loss', loss.item(), 'softness', round(softness, 3))
     with open('results/trianglesoup_rendering/softness_log.txt', 'a') as f:
         f.write(f'iter {t}: softness={softness:.4f} loss={loss.item():.4f}\n')
-    optimizer.step()  # Adam reads .grad -> moves vertices_n, colours
+    with torch.no_grad():
+        opacity_current = torch.sigmoid(opacity_logit)
+    with open('results/trianglesoup_rendering/opacity_log.txt', 'a') as f:
+        f.write(f'iter {t}: opacity[min={opacity_current.min().item():.3f} '
+                f'max={opacity_current.max().item():.3f} '
+                f'mean={opacity_current.mean().item():.3f}]\n')
+    optimizer.step()  # Adam reads .grad -> moves vertices_n, colours, opacity_logit
 
     if t == iters - 2:
         second_last_vertices_px = (vertices_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
@@ -71,6 +85,8 @@ for t in range(iters):
     with torch.no_grad():
         vertices_n.clamp_(0.0, 1.0)
         colours.clamp_(0.0, 1.0)
+        # No clamp needed for opacity_logit -- sigmoid already bounds the
+        # actual opacity to [0,1] regardless of the logit's raw value.
 
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
                       'results/trianglesoup_rendering/iter_{}.png'.format(t), gamma=1.0)
@@ -92,7 +108,7 @@ fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)
 ax.set_xlabel('Iteration')
 ax.set_ylabel('Loss')
-ax.set_title(f'Convergence (N={N} triangles, softness {SOFTNESS_START}->{SOFTNESS_END}px)')
+ax.set_title(f'Convergence (N={N} triangles, learnable opacity, softness {SOFTNESS_START}->{SOFTNESS_END}px)')
 plt.savefig('results/trianglesoup_rendering/loss_curve.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved loss_curve.png')
@@ -101,21 +117,25 @@ print('saved loss_curve.png')
 # Render the final result.
 # --------------------------------------
 vertices_px = vertices_n * torch.tensor([canvas_width, canvas_height])
+opacity_final = torch.sigmoid(opacity_logit)
 final = pydiffvg.TriangleSoupRenderFunction.apply(
-    vertices_px, colours, SOFTNESS_END, None, canvas_width, canvas_height)
+    vertices_px, colours, opacity_final, SOFTNESS_END, None, canvas_width, canvas_height)
 pydiffvg.imwrite(final.detach().clamp(0, 1).cpu(), 'results/trianglesoup_rendering/final.png', gamma=1.0)
 
 # -------------------------------------------------------------------
-# Visualization: overlay triangle outlines on the final render.
+# Visualization: overlay triangle outlines on the final render, edge
+# opacity reflecting each triangle's learned opacity.
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
 display_img = final.detach().clamp(0, 1).cpu().numpy()
 ax.imshow(display_img)
 verts_np = vertices_px.detach().cpu().numpy()
+opacity_np = opacity_final.detach().cpu().numpy()
 for idx in range(N):
     tri = verts_np[idx]
     ax.add_patch(MplPolygon(tri, closed=True, facecolor='none',
-                             edgecolor='lime', linewidth=0.4, alpha=0.6))
+                             edgecolor='lime', linewidth=0.4,
+                             alpha=float(np.clip(opacity_np[idx], 0.05, 1.0))))
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -148,6 +168,18 @@ plt.close(fig)
 print('saved movement_quiver.png')
 
 # -------------------------------------------------------------------
+# Opacity distribution histogram
+# -------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(7, 4))
+ax.hist(opacity_np, bins=40, color='#3C896D')
+ax.set_xlabel('Learned opacity')
+ax.set_ylabel('Count')
+ax.set_title('Final opacity distribution across triangles')
+plt.savefig('results/trianglesoup_rendering/opacity_histogram.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved opacity_histogram.png')
+
+# -------------------------------------------------------------------
 # Per-pixel error heatmap
 # -------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
@@ -169,7 +201,7 @@ axes[0].imshow(target_np)
 axes[0].set_title('Target')
 axes[0].axis('off')
 axes[1].imshow(final_np)
-axes[1].set_title('Rendered (triangle soup)')
+axes[1].set_title('Rendered (triangle soup, learnable opacity)')
 axes[1].axis('off')
 im = axes[2].imshow(error_map, cmap='inferno')
 axes[2].set_title('Error heatmap')

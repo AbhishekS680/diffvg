@@ -105,16 +105,23 @@ struct Shape {
 struct TriangleSoupField {
     TriangleSoupField(ptr<float> vertices,
                        ptr<float> colours,
+                       ptr<float> opacity,
                        float softness,
                        int num_triangles) :
         vertices(vertices.get()),
         colours(colours.get()),
+        opacity(opacity.get()),
         softness(softness),
         num_triangles(num_triangles) {}
     // Per triangle: v0x, v0y, v1x, v1y, v2x, v2y (pixel space)
     float *vertices;
     // Per triangle: r, g, b (flat colour, no interpolation)
     float *colours;
+    // Per triangle: opacity in [0,1] -- caps how solid the triangle's
+    // interior is, independent of edge softness. Passed in already
+    // squashed through sigmoid on the Python side, so this is the
+    // actual value used, not a raw logit.
+    float *opacity;
     // Edge blur width in pixels -- larger = softer edges, stronger
     // gradients; smaller = sharper edges, weaker gradients near boundary.
     float softness;

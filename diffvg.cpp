@@ -1694,12 +1694,14 @@ py::tuple get_trianglesoup_timing() {
 // as render_ellipse_wendland: recompute each triangle's geometry in the
 // backward loop rather than caching it, only the running alpha-composite
 // state (hist_r/g/b/alpha) and each triangle's alpha_i are cached.
+
 void render_trianglesoup(const TriangleSoupField &field,
                          ptr<float> background_image,
                          ptr<float> render_image,
                          ptr<float> d_render_image,
                          ptr<float> d_vertices,
                          ptr<float> d_colours,
+                         ptr<float> d_opacity,
                          int width,
                          int height) {
     const int N = field.num_triangles;
@@ -1726,8 +1728,6 @@ void render_trianglesoup(const TriangleSoupField &field,
                 float v2x = field.vertices[i * 6 + 4];
                 float v2y = field.vertices[i * 6 + 5];
 
-                // Signed edge functions, same convention as the PyTorch
-                // prototype's edge_fn(a, b, p).
                 float e0 = (x - v0x) * (v1y - v0y) - (y - v0y) * (v1x - v0x);
                 float e1 = (x - v1x) * (v2y - v1y) - (y - v1y) * (v2x - v1x);
                 float e2 = (x - v2x) * (v0y - v2y) - (y - v2y) * (v0x - v2x);
@@ -1738,7 +1738,13 @@ void render_trianglesoup(const TriangleSoupField &field,
 
                 float cov_pos = s0 * s1 * s2;
                 float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
-                float alpha_i = max(cov_pos, cov_neg);
+                float coverage_i = max(cov_pos, cov_neg);
+
+                // Effective alpha caps at opacity, not 1.0 -- lets a
+                // triangle stay partially see-through even at its center,
+                // so anything behind it keeps receiving gradient.
+                float opacity_i = field.opacity[i];
+                float alpha_i = coverage_i * opacity_i;
 
                 float color_r = field.colours[i * 3 + 0];
                 float color_g = field.colours[i * 3 + 1];
@@ -1785,7 +1791,6 @@ void render_trianglesoup(const TriangleSoupField &field,
                     float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
                     float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
 
-                    // Over-operator backward (same as render_ellipse_wendland)
                     float d_prev_r = d_curr_r * (1.0f - alpha_i);
                     float d_prev_g = d_curr_g * (1.0f - alpha_i);
                     float d_prev_b = d_curr_b * (1.0f - alpha_i);
@@ -1806,8 +1811,7 @@ void render_trianglesoup(const TriangleSoupField &field,
                         d_colours.get()[i * 3 + 2] += d_color_b;
                     }
 
-                    // Recompute this triangle's geometry (not cached, same
-                    // pattern as Wendland recomputing px/py/ai/bi/theta).
+                    // Recompute this triangle's geometry.
                     float v0x = field.vertices[i * 6 + 0];
                     float v0y = field.vertices[i * 6 + 1];
                     float v1x = field.vertices[i * 6 + 2];
@@ -1826,10 +1830,18 @@ void render_trianglesoup(const TriangleSoupField &field,
                     float cov_pos = s0 * s1 * s2;
                     float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
                     bool use_pos = cov_pos >= cov_neg;
+                    float coverage_i = use_pos ? cov_pos : cov_neg;
 
-                    // d(coverage)/d(s_k), picking whichever branch was
-                    // actually used in the forward pass (matches
-                    // torch.maximum's subgradient behavior).
+                    float opacity_i = field.opacity[i];
+
+                    // alpha_i = coverage_i * opacity_i, split d_alpha_i
+                    // into the piece flowing to coverage (-> vertices)
+                    // and the piece flowing to opacity directly.
+                    float d_coverage_i = d_alpha_i * opacity_i;
+                    if (d_opacity.get() != nullptr) {
+                        d_opacity.get()[i] += d_alpha_i * coverage_i;
+                    }
+
                     float dcov_ds0, dcov_ds1, dcov_ds2;
                     if (use_pos) {
                         dcov_ds0 = s1 * s2;
@@ -1841,19 +1853,17 @@ void render_trianglesoup(const TriangleSoupField &field,
                         dcov_ds2 = -(1.0f - s0) * (1.0f - s1);
                     }
 
-                    // d(sigmoid(e/S))/d(e) = s*(1-s)/S
                     float ds0_de0 = s0 * (1.0f - s0) / S;
                     float ds1_de1 = s1 * (1.0f - s1) / S;
                     float ds2_de2 = s2 * (1.0f - s2) / S;
 
-                    // Gradient flowing into each edge function
-                    float g0 = d_alpha_i * dcov_ds0 * ds0_de0;
-                    float g1 = d_alpha_i * dcov_ds1 * ds1_de1;
-                    float g2 = d_alpha_i * dcov_ds2 * ds2_de2;
+                    // Gradient flowing into each edge function now uses
+                    // d_coverage_i (not d_alpha_i directly), since
+                    // opacity's contribution was already split off above.
+                    float g0 = d_coverage_i * dcov_ds0 * ds0_de0;
+                    float g1 = d_coverage_i * dcov_ds1 * ds1_de1;
+                    float g2 = d_coverage_i * dcov_ds2 * ds2_de2;
 
-                    // Partial derivatives of each edge function w.r.t. the
-                    // two vertices it depends on (e0 depends on v0,v1;
-                    // e1 depends on v1,v2; e2 depends on v2,v0).
                     float de0_dv0x = -(v1y - v0y) + (y - v0y);
                     float de0_dv0y = -(x - v0x) + (v1x - v0x);
                     float de0_dv1x = -(y - v0y);
@@ -1870,13 +1880,10 @@ void render_trianglesoup(const TriangleSoupField &field,
                     float de2_dv0y =  (x - v2x);
 
                     if (d_vertices.get() != nullptr) {
-                        // v0 receives contributions from e0 and e2
                         d_vertices.get()[i * 6 + 0] += g0 * de0_dv0x + g2 * de2_dv0x;
                         d_vertices.get()[i * 6 + 1] += g0 * de0_dv0y + g2 * de2_dv0y;
-                        // v1 receives contributions from e0 and e1
                         d_vertices.get()[i * 6 + 2] += g0 * de0_dv1x + g1 * de1_dv1x;
                         d_vertices.get()[i * 6 + 3] += g0 * de0_dv1y + g1 * de1_dv1y;
-                        // v2 receives contributions from e1 and e2
                         d_vertices.get()[i * 6 + 4] += g1 * de1_dv2x + g2 * de2_dv2x;
                         d_vertices.get()[i * 6 + 5] += g1 * de1_dv2y + g2 * de2_dv2y;
                     }
@@ -1898,7 +1905,7 @@ PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
     py::class_<TriangleSoupField>(m, "TriangleSoupField")
-        .def(py::init<ptr<float>, ptr<float>, float, int>())
+        .def(py::init<ptr<float>, ptr<float>, ptr<float>, float, int>())
         .def("get_ptr", &TriangleSoupField::get_ptr)
         .def_readonly("num_triangles", &TriangleSoupField::num_triangles);
     m.def("render_trianglesoup", &render_trianglesoup, "");
