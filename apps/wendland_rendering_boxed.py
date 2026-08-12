@@ -14,8 +14,8 @@ from matplotlib.patches import Ellipse
 
 os.makedirs('results/wendland_rendering_boxed', exist_ok=True)
 
-N = 10000
-iters = 500
+N = 1000
+iters = 200
 
 # --- Semi-axis size penalty ---
 # Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
