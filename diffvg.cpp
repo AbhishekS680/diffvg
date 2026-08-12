@@ -1678,22 +1678,7 @@ py::tuple get_trianglesoup_timing() {
 }
 
 // Triangle soup: N independent triangles (no shared vertices/edges, unlike
-// a mesh), each with a flat colour, composited via alpha-over in index
-// order (painter's algorithm -- triangle N-1 painted last, on top).
-//
-// Coverage per triangle per pixel uses soft rasterization: each of the 3
-// edges gets a sigmoid-smoothed "inside" test (a plain point-in-triangle
-// test is a step function with zero gradient almost everywhere, which
-// would give no signal for moving vertices). This mirrors exactly what
-// the PyTorch prototype (trianglesoup_prototype.py) does, so the C++
-// forward pass should reproduce the same renders once ported.
-//
-// Backward pass derives closed-form gradients through the sigmoid-edge
-// coverage function analytically (equivalent to what autograd computed
-// in the PyTorch prototype), following the same history-buffer pattern
-// as render_ellipse_wendland: recompute each triangle's geometry in the
-// backward loop rather than caching it, only the running alpha-composite
-// state (hist_r/g/b/alpha) and each triangle's alpha_i are cached.
+// a mesh), each with a flat colour, composited via alpha-over in index order
 
 void render_trianglesoup(const TriangleSoupField &field,
                          ptr<float> background_image,
