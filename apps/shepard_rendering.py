@@ -43,12 +43,12 @@ for t in range(iters):
     loss = (img - target).pow(2).sum() # how wrong is the current render
 
     # Repulsion: move control points that are too close to each other
-    positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
-    diff = positions_px.unsqueeze(0) - positions_px.unsqueeze(1)  # (N, N, 2)
-    dist_sq = diff.pow(2).sum(dim=2) + 0.001  # (N, N) squared distances, +1 prevents division by zero
-    eye_mask = 1 - torch.eye(N)
-    repulsion = (1.0 / dist_sq * eye_mask).sum()
-    loss = loss + 0.01 * repulsion
+    # positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
+    # diff = positions_px.unsqueeze(0) - positions_px.unsqueeze(1)  # (N, N, 2)
+    # dist_sq = diff.pow(2).sum(dim=2) + 0.001  # (N, N) squared distances, +1 prevents division by zero
+    # eye_mask = 1 - torch.eye(N)
+    # repulsion = (1.0 / dist_sq * eye_mask).sum()
+    # loss = loss + 0.01 * repulsion
 
     loss_history.append(loss.item())
     loss.backward() # backward → C++ fills d_positions, d_colours → deposits into .grad -> d_render_image created
