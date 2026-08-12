@@ -14,8 +14,8 @@ import numpy as np
 from matplotlib.patches import Ellipse
 os.makedirs('results/ellipse_diffvg', exist_ok=True)
 
-N = 10000
-iters = 500
+N = 1000
+iters = 200
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
