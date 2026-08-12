@@ -21,8 +21,8 @@ args = parser.parse_args()
 os.makedirs(args.outdir, exist_ok=True)
 os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
-N = 10000
-iters = 500
+N = 1000
+iters = 200
 
 # --- Semi-axis size penalty ---
 # Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
