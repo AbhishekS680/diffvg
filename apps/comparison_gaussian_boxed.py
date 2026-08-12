@@ -58,7 +58,7 @@ loss_history = []
 diffvg.reset_ellipse_gaussian_boxed_timing()
 
 # Clear old axis-penalty log before a fresh run
-open(f'{args.outdir}/axis_penalty_log.txt', 'w').close()
+# open(f'{args.outdir}/axis_penalty_log.txt', 'w').close()
 
 # --- Optimization loop ---
 for t in range(iters):
@@ -72,9 +72,9 @@ for t in range(iters):
 
     # Soft penalty on oversized semi-axes: zero contribution while a/b stay
     # under MAX_AXIS_PX, quadratic growth past it.
-    axis_penalty = (torch.clamp(a_px - MAX_AXIS_PX, min=0).pow(2).sum()
-                    + torch.clamp(b_px - MAX_AXIS_PX, min=0).pow(2).sum())
-    loss = loss + AXIS_PENALTY_WEIGHT * axis_penalty
+    # axis_penalty = (torch.clamp(a_px - MAX_AXIS_PX, min=0).pow(2).sum()
+    #                 + torch.clamp(b_px - MAX_AXIS_PX, min=0).pow(2).sum())
+    # loss = loss + AXIS_PENALTY_WEIGHT * axis_penalty
     loss_history.append(loss.item())
     loss.backward()
     print('iter', t, 'loss', loss.item())
@@ -82,14 +82,14 @@ for t in range(iters):
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
-    n_over = int(((a_px.detach() > MAX_AXIS_PX) | (b_px.detach() > MAX_AXIS_PX)).sum().item())
-    with open(f'{args.outdir}/axis_penalty_log.txt', 'a') as f:
-        f.write(f'iter {t}: penalty={axis_penalty.item():.6f} '
-                f'n_over_threshold={n_over}/{N} '
-                f'a[min={a_px.detach().min().item():.3f} max={a_px.detach().max().item():.3f} '
-                f'mean={a_px.detach().mean().item():.3f}] '
-                f'b[min={b_px.detach().min().item():.3f} max={b_px.detach().max().item():.3f} '
-                f'mean={b_px.detach().mean().item():.3f}]\n')
+    # n_over = int(((a_px.detach() > MAX_AXIS_PX) | (b_px.detach() > MAX_AXIS_PX)).sum().item())
+    # with open(f'{args.outdir}/axis_penalty_log.txt', 'a') as f:
+    #     f.write(f'iter {t}: penalty={axis_penalty.item():.6f} '
+    #             f'n_over_threshold={n_over}/{N} '
+    #             f'a[min={a_px.detach().min().item():.3f} max={a_px.detach().max().item():.3f} '
+    #             f'mean={a_px.detach().mean().item():.3f}] '
+    #             f'b[min={b_px.detach().min().item():.3f} max={b_px.detach().max().item():.3f} '
+    #             f'mean={b_px.detach().mean().item():.3f}]\n')
     optimizer.step()
 
     if t == iters - 2:
