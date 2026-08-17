@@ -933,3 +933,64 @@ class TriangleSoupRenderFunction(torch.autograd.Function):
             ctx.width, ctx.height)
 
         return d_vertices, d_colours, d_opacity, None, None, None, None
+
+class TriangleSoupBoxedRenderFunction(torch.autograd.Function):
+    # Same as TriangleSoupRenderFunction, but uses the tile-grid
+    # accelerated C++ renderer. Kept as a separate class so the original
+    # stays untouched and validated.
+    @staticmethod
+    def forward(ctx, vertices, colours, opacity, softness, background_image, width, height):
+        vertices_cpu = vertices.contiguous().cpu()
+        colours_cpu  = colours.contiguous().cpu()
+        opacity_cpu  = opacity.contiguous().cpu()
+        background_cpu = background_image.contiguous().cpu() if background_image is not None else None
+        render_image = torch.zeros(height, width, 3)
+
+        field = diffvg.TriangleSoupField(
+            diffvg.float_ptr(vertices_cpu.data_ptr()),
+            diffvg.float_ptr(colours_cpu.data_ptr()),
+            diffvg.float_ptr(opacity_cpu.data_ptr()),
+            softness,
+            vertices_cpu.shape[0])
+        diffvg.render_trianglesoup_boxed(field,
+            diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
+            diffvg.float_ptr(render_image.data_ptr()),
+            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),
+            width, height)
+
+        ctx.save_for_backward(vertices_cpu, colours_cpu, opacity_cpu)
+        ctx.background_cpu = background_cpu
+        ctx.softness = softness
+        ctx.width  = width
+        ctx.height = height
+        return render_image
+
+    @staticmethod
+    def backward(ctx, grad_img):
+        vertices_cpu, colours_cpu, opacity_cpu = ctx.saved_tensors
+        background_cpu = ctx.background_cpu
+        grad_img_cpu = grad_img.contiguous().cpu()
+
+        d_vertices = torch.zeros_like(vertices_cpu)
+        d_colours  = torch.zeros_like(colours_cpu)
+        d_opacity  = torch.zeros_like(opacity_cpu)
+
+        field = diffvg.TriangleSoupField(
+            diffvg.float_ptr(vertices_cpu.data_ptr()),
+            diffvg.float_ptr(colours_cpu.data_ptr()),
+            diffvg.float_ptr(opacity_cpu.data_ptr()),
+            ctx.softness,
+            vertices_cpu.shape[0])
+        diffvg.render_trianglesoup_boxed(field,
+            diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
+            diffvg.float_ptr(0),
+            diffvg.float_ptr(grad_img_cpu.data_ptr()),
+            diffvg.float_ptr(d_vertices.data_ptr()),
+            diffvg.float_ptr(d_colours.data_ptr()),
+            diffvg.float_ptr(d_opacity.data_ptr()),
+            ctx.width, ctx.height)
+
+        return d_vertices, d_colours, d_opacity, None, None, None, None

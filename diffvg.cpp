@@ -1886,6 +1886,297 @@ void render_trianglesoup(const TriangleSoupField &field,
     }
 }
 
+
+// Timing accumulators for render_trianglesoup_boxed (forward/backward)
+static double g_trianglesoup_boxed_forward_time_ms = 0.0;
+static double g_trianglesoup_boxed_backward_time_ms = 0.0;
+static long long g_trianglesoup_boxed_forward_pixel_calls = 0;
+static long long g_trianglesoup_boxed_backward_pixel_calls = 0;
+
+void reset_trianglesoup_boxed_timing() {
+    g_trianglesoup_boxed_forward_time_ms = 0.0;
+    g_trianglesoup_boxed_backward_time_ms = 0.0;
+    g_trianglesoup_boxed_forward_pixel_calls = 0;
+    g_trianglesoup_boxed_backward_pixel_calls = 0;
+}
+void print_trianglesoup_boxed_timing() {
+    printf("---- render_trianglesoup_boxed timing ----\n");
+    printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_trianglesoup_boxed_forward_time_ms, g_trianglesoup_boxed_forward_pixel_calls,
+           g_trianglesoup_boxed_forward_pixel_calls > 0 ? g_trianglesoup_boxed_forward_time_ms / g_trianglesoup_boxed_forward_pixel_calls : 0.0);
+    printf("Backward: %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
+           g_trianglesoup_boxed_backward_time_ms, g_trianglesoup_boxed_backward_pixel_calls,
+           g_trianglesoup_boxed_backward_pixel_calls > 0 ? g_trianglesoup_boxed_backward_time_ms / g_trianglesoup_boxed_backward_pixel_calls : 0.0);
+}
+py::tuple get_trianglesoup_boxed_timing() {
+    return py::make_tuple(g_trianglesoup_boxed_forward_time_ms, g_trianglesoup_boxed_forward_pixel_calls,
+                           g_trianglesoup_boxed_backward_time_ms, g_trianglesoup_boxed_backward_pixel_calls);
+}
+
+// Buckets triangles into a grid of tiles. Each triangle is registered in
+// every tile its bounding box (padded for edge softness) overlaps -- a
+// pixel outside that padded box has negligible coverage from that
+// triangle (sigmoid saturated), so skipping it there is safe.
+constexpr int TRIANGLESOUP_TILE_SIZE = 64; // pixels per tile side
+constexpr float TRIANGLESOUP_EDGE_MARGIN_MULT = 6.0f; // sigmoid(6) ~ 0.9975
+
+struct TriangleTileGrid {
+    int tile_size;
+    int num_tiles_x, num_tiles_y;
+    std::vector<std::vector<int>> tiles; // ascending triangle index per tile
+
+    TriangleTileGrid(const TriangleSoupField &field, int width, int height, int tile_size)
+        : tile_size(tile_size) {
+        num_tiles_x = (width  + tile_size - 1) / tile_size;
+        num_tiles_y = (height + tile_size - 1) / tile_size;
+        tiles.resize(num_tiles_x * num_tiles_y);
+
+        const int N = field.num_triangles;
+        const float margin = TRIANGLESOUP_EDGE_MARGIN_MULT * field.softness;
+
+        for (int i = 0; i < N; i++) {
+            float v0x = field.vertices[i * 6 + 0];
+            float v0y = field.vertices[i * 6 + 1];
+            float v1x = field.vertices[i * 6 + 2];
+            float v1y = field.vertices[i * 6 + 3];
+            float v2x = field.vertices[i * 6 + 4];
+            float v2y = field.vertices[i * 6 + 5];
+
+            float min_x = min(v0x, min(v1x, v2x)) - margin;
+            float max_x = max(v0x, max(v1x, v2x)) + margin;
+            float min_y = min(v0y, min(v1y, v2y)) - margin;
+            float max_y = max(v0y, max(v1y, v2y)) + margin;
+
+            int tx_min = max(0, (int)floor(min_x / tile_size));
+            int tx_max = min(num_tiles_x - 1, (int)floor(max_x / tile_size));
+            int ty_min = max(0, (int)floor(min_y / tile_size));
+            int ty_max = min(num_tiles_y - 1, (int)floor(max_y / tile_size));
+
+            for (int ty = ty_min; ty <= ty_max; ty++) {
+                for (int tx = tx_min; tx <= tx_max; tx++) {
+                    tiles[ty * num_tiles_x + tx].push_back(i);
+                }
+            }
+        }
+    }
+
+    const std::vector<int>& get(int x, int y) const {
+        int tx = min(max(x / tile_size, 0), num_tiles_x - 1);
+        int ty = min(max(y / tile_size, 0), num_tiles_y - 1);
+        return tiles[ty * num_tiles_x + tx];
+    }
+};
+
+// Same math as render_trianglesoup, but each pixel only checks triangles
+// registered in its tile instead of all N. See render_trianglesoup for
+// the detailed math walkthrough (edge functions, sigmoid coverage,
+// opacity, alpha-over compositing, and the backward-pass gradient
+// derivation) -- unchanged here, just index-list-driven instead of a
+// flat 0..N-1 loop.
+void render_trianglesoup_boxed(const TriangleSoupField &field,
+                               ptr<float> background_image,
+                               ptr<float> render_image,
+                               ptr<float> d_render_image,
+                               ptr<float> d_vertices,
+                               ptr<float> d_colours,
+                               ptr<float> d_opacity,
+                               int width,
+                               int height) {
+    const float S = field.softness;
+    TriangleTileGrid grid(field, width, height, TRIANGLESOUP_TILE_SIZE);
+
+    std::vector<float> hist_r, hist_g, hist_b, hist_alpha, hist_alpha_i;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            const std::vector<int> &ids = grid.get(x, y);
+            int M = (int)ids.size();
+            if ((int)hist_r.size() < M) {
+                hist_r.resize(M); hist_g.resize(M); hist_b.resize(M);
+                hist_alpha.resize(M); hist_alpha_i.resize(M);
+            }
+
+            float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
+            if (background_image.get() != nullptr) {
+                int bg_index = (y * width + x) * 3;
+                accum_r = background_image.get()[bg_index + 0];
+                accum_g = background_image.get()[bg_index + 1];
+                accum_b = background_image.get()[bg_index + 2];
+                accum_alpha = 1.0f;
+            }
+
+            auto fwd_start = std::chrono::high_resolution_clock::now();
+            for (int li = 0; li < M; li++) {
+                int i = ids[li];
+                float v0x = field.vertices[i * 6 + 0];
+                float v0y = field.vertices[i * 6 + 1];
+                float v1x = field.vertices[i * 6 + 2];
+                float v1y = field.vertices[i * 6 + 3];
+                float v2x = field.vertices[i * 6 + 4];
+                float v2y = field.vertices[i * 6 + 5];
+
+                float e0 = (x - v0x) * (v1y - v0y) - (y - v0y) * (v1x - v0x);
+                float e1 = (x - v1x) * (v2y - v1y) - (y - v1y) * (v2x - v1x);
+                float e2 = (x - v2x) * (v0y - v2y) - (y - v2y) * (v0x - v2x);
+
+                float s0 = 1.0f / (1.0f + exp(-e0 / S));
+                float s1 = 1.0f / (1.0f + exp(-e1 / S));
+                float s2 = 1.0f / (1.0f + exp(-e2 / S));
+
+                float cov_pos = s0 * s1 * s2;
+                float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
+                float coverage_i = max(cov_pos, cov_neg);
+
+                float opacity_i = field.opacity[i];
+                float alpha_i = coverage_i * opacity_i;
+
+                float color_r = field.colours[i * 3 + 0];
+                float color_g = field.colours[i * 3 + 1];
+                float color_b = field.colours[i * 3 + 2];
+
+                accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
+                accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
+                accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
+                accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
+
+                hist_r[li] = accum_r;
+                hist_g[li] = accum_g;
+                hist_b[li] = accum_b;
+                hist_alpha[li] = accum_alpha;
+                hist_alpha_i[li] = alpha_i;
+            }
+            auto fwd_end = std::chrono::high_resolution_clock::now();
+            g_trianglesoup_boxed_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
+            g_trianglesoup_boxed_forward_pixel_calls++;
+
+            int index = (y * width + x) * 3;
+            if (render_image.get() != nullptr) {
+                render_image.get()[index + 0] = accum_r;
+                render_image.get()[index + 1] = accum_g;
+                render_image.get()[index + 2] = accum_b;
+            }
+
+            if (d_render_image.get() != nullptr) {
+                auto bwd_start = std::chrono::high_resolution_clock::now();
+                float d_curr_r = d_render_image.get()[index + 0];
+                float d_curr_g = d_render_image.get()[index + 1];
+                float d_curr_b = d_render_image.get()[index + 2];
+                float d_curr_alpha = 0.0f;
+
+                for (int li = M - 1; li >= 0; li--) {
+                    int i = ids[li];
+                    float alpha_i = hist_alpha_i[li];
+                    float color_r = field.colours[i * 3 + 0];
+                    float color_g = field.colours[i * 3 + 1];
+                    float color_b = field.colours[i * 3 + 2];
+
+                    float prev_r     = (li > 0) ? hist_r[li - 1]     : 0.0f;
+                    float prev_g     = (li > 0) ? hist_g[li - 1]     : 0.0f;
+                    float prev_b     = (li > 0) ? hist_b[li - 1]     : 0.0f;
+                    float prev_alpha = (li > 0) ? hist_alpha[li - 1] : 0.0f;
+
+                    float d_prev_r = d_curr_r * (1.0f - alpha_i);
+                    float d_prev_g = d_curr_g * (1.0f - alpha_i);
+                    float d_prev_b = d_curr_b * (1.0f - alpha_i);
+                    float d_prev_alpha = d_curr_alpha * (1.0f - alpha_i);
+
+                    float d_color_r = d_curr_r * alpha_i;
+                    float d_color_g = d_curr_g * alpha_i;
+                    float d_color_b = d_curr_b * alpha_i;
+
+                    float d_alpha_i = d_curr_alpha * (1.0f - prev_alpha)
+                                     + d_curr_r * (color_r - prev_r)
+                                     + d_curr_g * (color_g - prev_g)
+                                     + d_curr_b * (color_b - prev_b);
+
+                    if (d_colours.get() != nullptr) {
+                        d_colours.get()[i * 3 + 0] += d_color_r;
+                        d_colours.get()[i * 3 + 1] += d_color_g;
+                        d_colours.get()[i * 3 + 2] += d_color_b;
+                    }
+
+                    float v0x = field.vertices[i * 6 + 0];
+                    float v0y = field.vertices[i * 6 + 1];
+                    float v1x = field.vertices[i * 6 + 2];
+                    float v1y = field.vertices[i * 6 + 3];
+                    float v2x = field.vertices[i * 6 + 4];
+                    float v2y = field.vertices[i * 6 + 5];
+
+                    float e0 = (x - v0x) * (v1y - v0y) - (y - v0y) * (v1x - v0x);
+                    float e1 = (x - v1x) * (v2y - v1y) - (y - v1y) * (v2x - v1x);
+                    float e2 = (x - v2x) * (v0y - v2y) - (y - v2y) * (v0x - v2x);
+
+                    float s0 = 1.0f / (1.0f + exp(-e0 / S));
+                    float s1 = 1.0f / (1.0f + exp(-e1 / S));
+                    float s2 = 1.0f / (1.0f + exp(-e2 / S));
+
+                    float cov_pos = s0 * s1 * s2;
+                    float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
+                    bool use_pos = cov_pos >= cov_neg;
+                    float coverage_i = use_pos ? cov_pos : cov_neg;
+
+                    float opacity_i = field.opacity[i];
+                    float d_coverage_i = d_alpha_i * opacity_i;
+                    if (d_opacity.get() != nullptr) {
+                        d_opacity.get()[i] += d_alpha_i * coverage_i;
+                    }
+
+                    float dcov_ds0, dcov_ds1, dcov_ds2;
+                    if (use_pos) {
+                        dcov_ds0 = s1 * s2;
+                        dcov_ds1 = s0 * s2;
+                        dcov_ds2 = s0 * s1;
+                    } else {
+                        dcov_ds0 = -(1.0f - s1) * (1.0f - s2);
+                        dcov_ds1 = -(1.0f - s0) * (1.0f - s2);
+                        dcov_ds2 = -(1.0f - s0) * (1.0f - s1);
+                    }
+
+                    float ds0_de0 = s0 * (1.0f - s0) / S;
+                    float ds1_de1 = s1 * (1.0f - s1) / S;
+                    float ds2_de2 = s2 * (1.0f - s2) / S;
+
+                    float g0 = d_coverage_i * dcov_ds0 * ds0_de0;
+                    float g1 = d_coverage_i * dcov_ds1 * ds1_de1;
+                    float g2 = d_coverage_i * dcov_ds2 * ds2_de2;
+
+                    float de0_dv0x = -(v1y - v0y) + (y - v0y);
+                    float de0_dv0y = -(x - v0x) + (v1x - v0x);
+                    float de0_dv1x = -(y - v0y);
+                    float de0_dv1y =  (x - v0x);
+
+                    float de1_dv1x = -(v2y - v1y) + (y - v1y);
+                    float de1_dv1y = -(x - v1x) + (v2x - v1x);
+                    float de1_dv2x = -(y - v1y);
+                    float de1_dv2y =  (x - v1x);
+
+                    float de2_dv2x = -(v0y - v2y) + (y - v2y);
+                    float de2_dv2y = -(x - v2x) + (v0x - v2x);
+                    float de2_dv0x = -(y - v2y);
+                    float de2_dv0y =  (x - v2x);
+
+                    if (d_vertices.get() != nullptr) {
+                        d_vertices.get()[i * 6 + 0] += g0 * de0_dv0x + g2 * de2_dv0x;
+                        d_vertices.get()[i * 6 + 1] += g0 * de0_dv0y + g2 * de2_dv0y;
+                        d_vertices.get()[i * 6 + 2] += g0 * de0_dv1x + g1 * de1_dv1x;
+                        d_vertices.get()[i * 6 + 3] += g0 * de0_dv1y + g1 * de1_dv1y;
+                        d_vertices.get()[i * 6 + 4] += g1 * de1_dv2x + g2 * de2_dv2x;
+                        d_vertices.get()[i * 6 + 5] += g1 * de1_dv2y + g2 * de2_dv2y;
+                    }
+
+                    d_curr_r = d_prev_r;
+                    d_curr_g = d_prev_g;
+                    d_curr_b = d_prev_b;
+                    d_curr_alpha = d_prev_alpha;
+                }
+                auto bwd_end = std::chrono::high_resolution_clock::now();
+                g_trianglesoup_boxed_backward_time_ms += std::chrono::duration<double, std::milli>(bwd_end - bwd_start).count();
+                g_trianglesoup_boxed_backward_pixel_calls++;
+            }
+        }
+    }
+}
+
 PYBIND11_MODULE(diffvg, m) {
     m.doc() = "Differential Vector Graphics";
 
@@ -1897,6 +2188,11 @@ PYBIND11_MODULE(diffvg, m) {
     m.def("reset_trianglesoup_timing", &reset_trianglesoup_timing, "");
     m.def("print_trianglesoup_timing", &print_trianglesoup_timing, "");
     m.def("get_trianglesoup_timing", &get_trianglesoup_timing, "");
+
+    m.def("render_trianglesoup_boxed", &render_trianglesoup_boxed, "");
+    m.def("reset_trianglesoup_boxed_timing", &reset_trianglesoup_boxed_timing, "");
+    m.def("print_trianglesoup_boxed_timing", &print_trianglesoup_boxed_timing, "");
+    m.def("get_trianglesoup_boxed_timing", &get_trianglesoup_boxed_timing, "");
 
     py::class_<ptr<void>>(m, "void_ptr")
         .def(py::init<std::size_t>())
