@@ -129,6 +129,14 @@ final = pydiffvg.EllipseGaussianBoxedRenderFunction.apply(
 final = final.clamp(0, 1)
 pydiffvg.imwrite(final.detach().cpu(), f'{args.outdir}/final.png', gamma=1.0)
 
+# --- Ellipse-only render (blank background instead of degraded) ---
+blank_canvas = torch.zeros_like(degraded)  # black background -- shows raw ellipse coverage
+ellipses_only = pydiffvg.EllipseGaussianBoxedRenderFunction.apply(
+    positions_px, colors, a_px, b_px, theta, blank_canvas, canvas_width, canvas_height)
+ellipses_only = ellipses_only.clamp(0, 1)
+pydiffvg.imwrite(ellipses_only.detach().cpu(), f'{args.outdir}/ellipses_only.png', gamma=1.0)
+print('saved ellipses_only.png')
+
 # Overlay control points on final render
 fig, ax = plt.subplots(figsize=(8, 8))
 display_img = final.detach().clamp(0, 1).cpu().numpy()
