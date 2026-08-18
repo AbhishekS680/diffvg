@@ -15,8 +15,8 @@ from matplotlib.patches import Ellipse
 
 os.makedirs('results/gaussian_rendering', exist_ok=True)
 
-N = 10000
-iters = 500
+N = 1000
+iters = 200
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
