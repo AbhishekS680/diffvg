@@ -16,8 +16,8 @@ from matplotlib.patches import Polygon as MplPolygon
 
 os.makedirs('results/trianglesoup_rendering_boxed', exist_ok=True)
 
-N = 2000
-iters = 500
+N = 1000
+iters = 200
 
 # --- Softness annealing ---
 # Coverage uses a sigmoid-smoothed edge test with width SOFTNESS pixels.
