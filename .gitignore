@@ -15,3 +15,5 @@ run_all_rendering.sh
 run_all_comparisons.sh
 compare_kernels.py
 plot_comparison.py
+compare_error_heatmaps.py
+compare_error_heatmaps_multi.py
