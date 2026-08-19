@@ -1914,9 +1914,7 @@ py::tuple get_trianglesoup_boxed_timing() {
 }
 
 // Buckets triangles into a grid of tiles. Each triangle is registered in
-// every tile its bounding box (padded for edge softness) overlaps -- a
-// pixel outside that padded box has negligible coverage from that
-// triangle (sigmoid saturated), so skipping it there is safe.
+// every tile its bounding box (padded for edge softness) overlaps
 constexpr int TRIANGLESOUP_TILE_SIZE = 64; // pixels per tile side
 constexpr float TRIANGLESOUP_EDGE_MARGIN_MULT = 6.0f; // sigmoid(6) ~ 0.9975
 
@@ -1927,14 +1925,16 @@ struct TriangleTileGrid {
 
     TriangleTileGrid(const TriangleSoupField &field, int width, int height, int tile_size)
         : tile_size(tile_size) {
+        // Finding how many tiles fit across the canvas
         num_tiles_x = (width  + tile_size - 1) / tile_size;
         num_tiles_y = (height + tile_size - 1) / tile_size;
-        tiles.resize(num_tiles_x * num_tiles_y);
+        tiles.resize(num_tiles_x * num_tiles_y); // One list per tile
 
         const int N = field.num_triangles;
-        const float margin = TRIANGLESOUP_EDGE_MARGIN_MULT * field.softness;
+        const float margin = TRIANGLESOUP_EDGE_MARGIN_MULT * field.softness; // Accounts for the soft sigmoid, so a triangle's influence goes a little past its vertices
 
         for (int i = 0; i < N; i++) {
+            // Find the bounding box for each triangle
             float v0x = field.vertices[i * 6 + 0];
             float v0y = field.vertices[i * 6 + 1];
             float v1x = field.vertices[i * 6 + 2];
@@ -1942,6 +1942,8 @@ struct TriangleTileGrid {
             float v2x = field.vertices[i * 6 + 4];
             float v2y = field.vertices[i * 6 + 5];
 
+            // Axis-aligned bounding box over all 3 vertices
+            // Computes the smallest rectangle that can enclose the triangle
             float min_x = min(v0x, min(v1x, v2x)) - margin;
             float max_x = max(v0x, max(v1x, v2x)) + margin;
             float min_y = min(v0y, min(v1y, v2y)) - margin;
@@ -1952,6 +1954,7 @@ struct TriangleTileGrid {
             int ty_min = max(0, (int)floor(min_y / tile_size));
             int ty_max = min(num_tiles_y - 1, (int)floor(max_y / tile_size));
 
+            // Register the triangle's index in every tile its box touches
             for (int ty = ty_min; ty <= ty_max; ty++) {
                 for (int tx = tx_min; tx <= tx_max; tx++) {
                     tiles[ty * num_tiles_x + tx].push_back(i);
@@ -1968,11 +1971,7 @@ struct TriangleTileGrid {
 };
 
 // Same math as render_trianglesoup, but each pixel only checks triangles
-// registered in its tile instead of all N. See render_trianglesoup for
-// the detailed math walkthrough (edge functions, sigmoid coverage,
-// opacity, alpha-over compositing, and the backward-pass gradient
-// derivation) -- unchanged here, just index-list-driven instead of a
-// flat 0..N-1 loop.
+// registered in its tile instead of all N
 void render_trianglesoup_boxed(const TriangleSoupField &field,
                                ptr<float> background_image,
                                ptr<float> render_image,
