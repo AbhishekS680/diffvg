@@ -1,6 +1,5 @@
 # comparison_shepard.py
 # Direct reconstruction: control points fit directly to the clear (original) target image
-
 import argparse
 import pydiffvg
 import torch
@@ -23,6 +22,7 @@ os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 N = 1000
 q = 3.0
 iters = 200
+
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
 # --- Load images ---
@@ -31,12 +31,30 @@ original = original[:, :, :3]
 canvas_height, canvas_width = original.shape[0], original.shape[1]
 pydiffvg.imwrite(original.cpu(), f'{args.outdir}/target_original.png', gamma=1.0)
 print('original shape:', original.shape)
+
 degraded_np = skimage.io.imread(args.degraded).astype(np.float32) / 255.0
 degraded_np = degraded_np[:, :, :3]
 degraded = torch.from_numpy(degraded_np)
 pydiffvg.imwrite(degraded.cpu(), f'{args.outdir}/init_source_degraded.png', gamma=1.0)
+
 assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_width, \
     'Degraded and original images must be the same size'
+
+# --- Baseline error heatmap: degraded vs original, before any reconstruction ---
+original_np = original.cpu().numpy()
+degraded_error_map = ((original_np - degraded_np) ** 2).mean(axis=2)
+print(f'baseline (degraded) mean error: {degraded_error_map.mean():.6f}')
+with open(f'{args.outdir}/baseline_error.txt', 'w') as f:
+    f.write(str(degraded_error_map.mean()))
+
+fig, ax = plt.subplots(figsize=(8, 6))
+im = ax.imshow(degraded_error_map, cmap='inferno')
+ax.axis('off')
+ax.set_title(f'Baseline error (degraded vs original), mean={degraded_error_map.mean():.5f}')
+fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+plt.savefig(f'{args.outdir}/degraded_error_heatmap.png', bbox_inches='tight', dpi=150)
+plt.close(fig)
+print('saved degraded_error_heatmap.png')
 
 # Init: random positions/colors
 positions_n = (torch.rand(N, 2)).clone().requires_grad_(True)
@@ -52,7 +70,6 @@ for t in range(iters):
     positions = positions_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height)
     loss = (img - original).pow(2).sum()
-
     # Repulsion: move control points that are too close to each other
     # positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
     # diff = positions_px.unsqueeze(0) - positions_px.unsqueeze(1)
@@ -60,7 +77,6 @@ for t in range(iters):
     # eye_mask = 1 - torch.eye(N)
     # repulsion = (1.0 / dist_sq * eye_mask).sum()
     # loss = loss + 0.01 * repulsion
-
     loss_history.append(loss.item())
     loss.backward()
 
@@ -75,22 +91,29 @@ for t in range(iters):
         f.write(f'iter {t}\n')
         f.write(f'  position grad norms: {pos_grad_norms.detach().numpy().tolist()}\n')
         f.write(f'  color grad norms: {color_grad_norms.detach().numpy().tolist()}\n')
+
     optimizer.step()
+
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
+
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
+
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(), f'{args.outdir}/iters/iter_{t}.png', gamma=1.0)
+
 print(f'final loss: {loss.item():.4f}')
 with open(f'{args.outdir}/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+
 diffvg.print_shepard_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_shepard_timing()
 with open(f'{args.outdir}/timing.txt', 'w') as f:
     f.write(f"render_shepard timing (N={N}, {iters} iters, {canvas_width}x{canvas_height})\n")
     f.write(f"Forward:  {fwd_ms:.3f} ms total, {fwd_calls} pixel-calls, {fwd_ms/fwd_calls:.6f} ms/pixel\n")
     f.write(f"Backward: {bwd_ms:.3f} ms total, {bwd_calls} pixel-calls, {bwd_ms/bwd_calls:.6f} ms/pixel\n")
+
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(loss_history)
 ax.set_xlabel('Iteration')
@@ -143,7 +166,6 @@ print('saved movement_quiver.png')
 
 # Error heatmap against the original
 fig, ax = plt.subplots(figsize=(8, 6))
-original_np = original.cpu().numpy()
 error_map = ((original_np - final_np) ** 2).mean(axis=2)
 im = ax.imshow(error_map, cmap='inferno')
 ax.axis('off')
@@ -152,21 +174,35 @@ plt.savefig(f'{args.outdir}/error_heatmap.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved error_heatmap.png')
 
-# Comparison grid
-fig, axes = plt.subplots(1, 4, figsize=(24, 6))
+# Comparison grid: degraded | degraded-error | original | reconstruction | reconstruction-error
+# Both error panels share one color scale so brightness is directly
+# comparable between "before" and "after" -- same idea as the shared-scale
+# multi-primitive comparison script.
+shared_vmax = max(degraded_error_map.max(), error_map.max())
+
+fig, axes = plt.subplots(1, 5, figsize=(30, 6))
 axes[0].imshow(degraded_np)
 axes[0].set_title('Degraded (reference only)')
 axes[0].axis('off')
-axes[1].imshow(original_np)
-axes[1].set_title('Original (target)')
+
+im0 = axes[1].imshow(degraded_error_map, cmap='inferno', vmin=0, vmax=shared_vmax)
+axes[1].set_title(f'Degraded error (mean={degraded_error_map.mean():.5f})')
 axes[1].axis('off')
-axes[2].imshow(final_np)
-axes[2].set_title('Reconstruction')
+fig.colorbar(im0, ax=axes[1], fraction=0.046, pad=0.04)
+
+axes[2].imshow(original_np)
+axes[2].set_title('Original (target)')
 axes[2].axis('off')
-im = axes[3].imshow(error_map, cmap='inferno')
-axes[3].set_title('Error heatmap')
+
+axes[3].imshow(final_np)
+axes[3].set_title('Reconstruction')
 axes[3].axis('off')
-fig.colorbar(im, ax=axes[3], fraction=0.046, pad=0.04)
+
+im1 = axes[4].imshow(error_map, cmap='inferno', vmin=0, vmax=shared_vmax)
+axes[4].set_title(f'Reconstruction error (mean={error_map.mean():.5f})')
+axes[4].axis('off')
+fig.colorbar(im1, ax=axes[4], fraction=0.046, pad=0.04)
+
 plt.savefig(f'{args.outdir}/all_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved all_comparison.png')
