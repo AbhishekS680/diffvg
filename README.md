@@ -118,9 +118,7 @@ diagnostic visualizations) to `results/<script_name>/`.
 
 ## Running a comparison (degraded → sharp reconstruction)
 
-The comparison scripts take a target (sharp) image and a degraded (blurred) image, and
-optimize the primitive's parameters to reconstruct the sharp image starting from the
-degraded one as the base canvas:
+The comparison scripts take a target (sharp) image and a degraded (blurred) image, and optimize the primitive's parameters to reconstruct the sharp image starting from the degraded one as the base canvas:
 
 ```
 python comparison_wendland_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_wendland_boxed
@@ -136,9 +134,7 @@ Each comparison run outputs, among other things:
 
 ### Running the full sweep
 
-`run_all_comparisons.sh` runs all four primitives across a chain of degradation levels,
-checking out each branch automatically and scoring each hop's reconstruction against the
-sharp target:
+`run_all_comparisons.sh` runs all four primitives across a chain of degradation levels, checking out each branch automatically and scoring each hop's reconstruction against the sharp target:
 
 ```
 chmod +x run_all_comparisons.sh
@@ -149,8 +145,7 @@ Score everything afterward with:
 ```
 python score_results.py
 ```
-which reports SSIM/LPIPS pass/fail per primitive per hop, using thresholds `SSIM > 0.9`
-and `LPIPS < 0.1`, and writes a summary table to `results/.../level_summary.txt`.
+which reports SSIM/LPIPS pass/fail per primitive per hop, using thresholds `SSIM > 0.9` and `LPIPS < 0.1`, and writes a summary table to `results/.../level_summary.txt`.
 
 ## Building in debug mode
 
@@ -163,11 +158,7 @@ python setup.py build --debug install
 ## Original diffvg
 
 The base rasterizer and its original usage (single-shape optimization, painterly
-rendering, image vectorization, seam carving, generative models) is documented at
-[https://people.csail.mit.edu/tzumao/diffvg](https://people.csail.mit.edu/tzumao/diffvg).
-See `apps/` for the original example scripts (`single_circle.py`,
-`painterly_rendering.py`, `refine_svg.py`, `seam_carving.py`, etc.), which still work
-unmodified on the `master` branch.
+rendering, image vectorization, seam carving, generative models) is documented at [https://people.csail.mit.edu/tzumao/diffvg](https://people.csail.mit.edu/tzumao/diffvg). See `apps/` for the original example scripts (`single_circle.py`, `painterly_rendering.py`, `refine_svg.py`, `seam_carving.py`, etc.), which still work unmodified on the `master` branch.
 
 If you use diffvg in your academic work, please cite the original paper:
 ```
