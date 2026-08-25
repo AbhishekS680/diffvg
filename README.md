@@ -157,7 +157,7 @@ python setup.py build --debug install
 
 ## Original diffvg
 
-The base rasterizer and its original usage (single-shape optimization, painterly rendering, image vectorization, seam carving, generative models) is documented at [https://people.csail.mit.edu/tzumao/diffvg](https://people.csail.mit.edu/tzumao/diffvg). See `apps/` for the original example scripts (`single_circle.py`, `painterly_rendering.py`, `refine_svg.py`, `seam_carving.py`, etc.), which still work unmodified on the `master` branch.
+The base rasterizer and its original usage (single-shape optimization, painterly rendering, image vectorization, seam carving, generative models) is documented at [https://people.csail.mit.edu/tzumao/diffvg/](https://people.csail.mit.edu/tzumao/diffvg/). See `apps/` for the original example scripts (`single_circle.py`, `painterly_rendering.py`, `refine_svg.py`, `seam_carving.py`, etc.), which still work unmodified on the `master` branch.
 
 If you use diffvg in your academic work, please cite the original paper:
 ```
