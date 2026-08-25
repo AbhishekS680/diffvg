@@ -34,9 +34,13 @@ The **Wendland reconstruction** uses a compact-support polynomial kernel. Each c
 
 The **Gaussian reconstruction** uses Gaussian radial basis functions. Each control point contributes a smooth falloff that extends across the image, with influence decreasing gradually as distance increases.
 
+---
+
 ![shepard reconstruction](docs/imgs/shepard_all_comparison.png)
 
 The **Shepard reconstruction** uses inverse-distance weighting. Pixel values are interpolated from control points according to their distances, allowing contributions from points across the image.
+
+---
 
 ![trianglesoup reconstruction](docs/imgs/trianglesoup_all_comparison.png)
 
