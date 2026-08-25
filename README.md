@@ -25,9 +25,20 @@ Instructions on how to run these scripts can be found below and inside the scrip
 ### Example output
 
 ![wendland reconstruction](docs/imgs/wendland_all_comparison.png)
+
+The **Wendland reconstruction** uses a compact-support polynomial kernel. Each control point influences only nearby pixels, producing a localized and smoothly blended reconstruction.
+
 ![gaussian reconstruction](docs/imgs/gaussian_all_comparison.png)
+
+The **Gaussian reconstruction** uses Gaussian radial basis functions. Each control point contributes a smooth falloff that extends across the image, with influence decreasing gradually as distance increases.
+
 ![shepard reconstruction](docs/imgs/shepard_all_comparison.png)
+
+The **Shepard reconstruction** uses inverse-distance weighting. Pixel values are interpolated from control points according to their distances, allowing contributions from points across the image.
+
 ![trianglesoup reconstruction](docs/imgs/trianglesoup_all_comparison.png)
+
+The **Triangle Soup reconstruction** represents the image using independent triangles. Each triangle has its own geometry, colour, and learnable opacity, and the triangles are composited to form the final reconstruction.
 
 ## Branch structure
 
