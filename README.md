@@ -20,7 +20,7 @@ This fork adds five additional primitive types, each implemented as its own C++ 
 Each kernel branch has both a plain O(N) renderer and a tile-grid accelerated ("boxed") variant that only evaluates primitives near each pixel, resulting in a faster reconsturction speed for a large
 N. Comparison scripts (`comparison_*.py`) reconstruct a target image starting from a degraded/blurred version, computing SSIM and LPIPS against the sharp original. 
 
-Instructions on how to run these scripts can be found below and inside the scripts themselve.
+*Instructions on how to run these scripts can be found below and inside the scripts themselves.*
 
 ### Example output
 
