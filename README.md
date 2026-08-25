@@ -1,24 +1,16 @@
 # diffvg (fork) — Comparative Analysis of Geometric Primitives for Differentiable Image Reconstruction
 
-This is a fork of [diffvg](https://people.csail.mit.edu/tzumao/diffvg), a differentiable
-rasterizer for 2D vector graphics. This fork extends diffvg with several additional
-kernel-based primitives and investigates which geometric representation offers the best
-trade-off between reconstruction fidelity, geometric complexity, and convergence speed,
-for the task of reconstructing raster (pixel) images.
+This is a fork of [diffvg](https://people.csail.mit.edu/tzumao/diffvg/), a differentiable rasterizer for 2D vector graphics. This fork extends diffvg with several additional kernel-based primitives and investigates which geometric representation offers the best trade-off between reconstruction fidelity, geometric complexity, and convergence speed, for the task of reconstructing raster (pixel) images.
 
-This project was completed as part of an NSERC USRA at Carleton University's Graphics,
-Imaging, and Games Lab (GIGL), supervised by Dr. David Mould and Dr. Oliver van Kaick.
+This project was completed as part of an NSERC USRA at Carleton University's Graphics, Imaging, and Games Lab (GIGL), supervised by Dr. David Mould and Dr. Oliver van Kaick.
 
 ## What's different in this fork
 
-The original diffvg supports circles, ellipses, rectangles, polygons, curves, and paths,
-optimized against a target image via gradient descent through a differentiable rasterizer.
+The original diffvg supports circles, ellipses, rectangles, polygons, curves, and paths, optimized against a target image via gradient descent through a differentiable rasterizer.
 
-This fork adds five additional primitive types, each implemented as its own C++ kernel
-bolted onto the diffvg pipeline, and compares them against each other on image
-reconstruction tasks:
+This fork adds five additional primitive types, each implemented as its own C++ kernel added onto the diffvg pipeline, and compares them against each other on image reconstruction tasks:
 
-- **Triangle meshes / triangle soups** — independent triangles, no shared vertices/edges,
+- **Triangle soups** — independent triangles, no shared vertices/edges,
   each with a flat colour and a learnable opacity, composited via soft-rasterized
   alpha-over compositing (`trianglesoup` branch)
 - **Splatting kernels** — three variants, each a smooth radial falloff around a control
