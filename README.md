@@ -58,6 +58,14 @@ Each primitive lives on its own branch, built off diffvg's `master`:
 | `shepard` | Shepard IDW global interpolation |
 | `trianglesoup` | Independent triangle soup with learnable opacity |
 
+## Requirements
+Before installing, make sure you have the following set up on your system:
+- **Git** (with submodule support)
+- **Conda** (Miniconda or Anaconda) — used to manage the Python environment and dependencies
+- **C++ compiler with C++14 support**
+  - Linux/macOS: GCC or Clang
+  - Windows: MSVC (via the x64 Native Tools Command Prompt — see Windows note below)
+
 ## Install
 
 ```
