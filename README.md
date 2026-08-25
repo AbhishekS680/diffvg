@@ -86,8 +86,7 @@ pip install lpips
 python setup.py install
 ```
 
-**Rebuilding after switching branches:** if you're not relying on the `post-checkout`
-hook, rebuild manually after any `git checkout`:
+**Rebuilding after switching branches:**
 ```
 rm -rf build
 python setup.py install
