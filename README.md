@@ -86,6 +86,8 @@ pip install lpips
 python setup.py install
 ```
 
+You can check if diffvg is installed correctly by running `python -c "import pydiffvg"` in the conda environment. If there are no errors, the installation was successful.
+
 **Rebuilding after switching branches:**
 ```
 rm -rf build
@@ -93,8 +95,7 @@ python setup.py install
 ```
 
 **Windows:** build from the x64 Native Tools Command Prompt with the conda environment
-activated. See `INSTALL.md` for Windows-specific linker/CMake fixes (Python lib paths,
-thrust/cub submodule pinning, etc.).
+activated.
 
 ## Running a single primitive
 
