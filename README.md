@@ -24,10 +24,10 @@ Instructions on how to run these scripts can be found below and inside the scrip
 
 ### Example output
 
-![wendland reconstruction](docs/images/wendland_all_comparison.png)
-![gaussian reconstruction](docs/images/gaussian_all_comparison.png)
-![shepard reconstruction](docs/images/shepard_all_comparison.png)
-![trianglesoup reconstruction](docs/images/trianglesoup_all_comparison.png)
+![wendland reconstruction](docs/imgs/wendland_all_comparison.png)
+![gaussian reconstruction](docs/imgs/gaussian_all_comparison.png)
+![shepard reconstruction](docs/imgs/shepard_all_comparison.png)
+![trianglesoup reconstruction](docs/imgs/trianglesoup_all_comparison.png)
 
 ## Branch structure
 
