@@ -28,6 +28,8 @@ Instructions on how to run these scripts can be found below and inside the scrip
 
 The **Wendland reconstruction** uses a compact-support polynomial kernel. Each control point influences only nearby pixels, producing a localized and smoothly blended reconstruction.
 
+---
+
 ![gaussian reconstruction](docs/imgs/gaussian_all_comparison.png)
 
 The **Gaussian reconstruction** uses Gaussian radial basis functions. Each control point contributes a smooth falloff that extends across the image, with influence decreasing gradually as distance increases.
