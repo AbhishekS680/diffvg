@@ -10,28 +10,19 @@ The original diffvg supports circles, ellipses, rectangles, polygons, curves, an
 
 This fork adds five additional primitive types, each implemented as its own C++ kernel added onto the diffvg pipeline, and compares them against each other on image reconstruction tasks:
 
-- **Triangle soups** — independent triangles, no shared vertices/edges,
-  each with a flat colour and a learnable opacity, composited via soft-rasterized
-  alpha-over compositing (`trianglesoup` branch)
-- **Splatting kernels** — three variants, each a smooth radial falloff around a control
-  point:
+- **Triangle soups** — independent triangles, no shared vertices/edges, each with a flat colour and a learnable opacity, composited via soft-rasterized alpha-over compositing (`trianglesoup` branch)
+- **Splatting kernels** — three variants, each a smooth radial falloff around a control point:
   - **Wendland C2** — compact-support polynomial kernel, `(1-t)^4(4t+1)` (`wendland` branch)
   - **Gaussian RBF** — standard Gaussian falloff, `exp(-t^2 / 2*sigma^2)` (`gaussian` branch)
-  - **Shepard IDW** — inverse-distance-weighted global interpolation, `1/dist^q`
-    (`shepard` branch)
-- **Polynomial kernels** — per-primitive polynomial coefficient blending (see
-  `poly` branch)
+  - **Shepard IDW** — inverse-distance-weighted global interpolation, `1/dist^q` (`shepard` branch)
+- **Polynomial kernels** — per-primitive polynomial coefficient blending (see `poly` branch)
 
-Each kernel branch has both a plain O(N) renderer and a tile-grid accelerated ("boxed")
-variant that only evaluates primitives near each pixel, giving a large speedup for large
-N. Comparison scripts (`comparison_*.py`) reconstruct a target image starting from a
-degraded/blurred version, computing SSIM and LPIPS against the sharp original.
+Each kernel branch has both a plain O(N) renderer and a tile-grid accelerated ("boxed") variant that only evaluates primitives near each pixel, resulting in a faster reconsturction speed for a large
+N. Comparison scripts (`comparison_*.py`) reconstruct a target image starting from a degraded/blurred version, computing SSIM and LPIPS against the sharp original. 
+
+Instructions on how to run these scripts can be found below and inside the scripts themselve.
 
 ### Example output
-
-*(Add your own result images here, e.g. from `results/.../all_comparison.png`. Suggested
-layout below — replace the paths with images you've copied into `docs/images/` in this
-repo.)*
 
 ![wendland reconstruction](docs/images/wendland_all_comparison.png)
 ![gaussian reconstruction](docs/images/gaussian_all_comparison.png)
