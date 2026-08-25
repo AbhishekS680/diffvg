@@ -58,14 +58,7 @@ Each primitive lives on its own branch, built off diffvg's `master`:
 | `shepard` | Shepard IDW global interpolation |
 | `trianglesoup` | Independent triangle soup with learnable opacity |
 
-Switching branches automatically rebuilds `pydiffvg` via a `post-checkout` git hook
-(`.git/hooks/post-checkout`), since each branch's C++ extension is built separately and a
-stale build causes `AttributeError`s from mismatched bindings.
-
 ## Install
-
-Same base dependencies as upstream diffvg, plus a few extras used by the comparison
-scripts:
 
 ```
 git submodule update --init --recursive
