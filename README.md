@@ -151,20 +151,6 @@ python score_results.py
 which reports SSIM/LPIPS pass/fail per primitive per hop, using thresholds `SSIM > 0.9`
 and `LPIPS < 0.1`, and writes a summary table to `results/.../level_summary.txt`.
 
-## Comparing primitives against each other
-
-Two additional scripts (kept in a separate `diffvg-tools` repo, copied into `apps/`
-before use) generate cross-primitive error comparisons:
-
-```
-python compare_error_heatmaps.py --target imgs/level_0.png --recon-a results/.../wendland/final.png --recon-b results/.../gaussian/final.png --label-a Wendland --label-b Gaussian
-python compare_error_heatmaps_multi.py --target imgs/level_0.png --recon Wendland:results/.../final.png --recon Gaussian:results/.../final.png --recon Shepard:results/.../final.png
-```
-
-The first produces a red/blue difference map showing exactly which pixels each primitive
-reconstructs better; the second puts any number of primitives' error heatmaps on one
-shared color scale plus a mean-error bar chart, for report-ready figures.
-
 ## Building in debug mode
 
 ```
