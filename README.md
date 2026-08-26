@@ -64,7 +64,7 @@ Before installing, make sure you have the following set up on your system:
 - **Conda** (Miniconda or Anaconda) — used to manage the Python environment and dependencies
 - **C++ compiler with C++14 support**
   - Linux/macOS: GCC or Clang
-  - Windows: MSVC (via the x64 Native Tools Command Prompt — see Windows note below)
+  - Windows: MSVC (via the x64 Native Tools Command Prompt)
 - **CUDA Toolkit** (optional for GPU acceleration; CPU-only builds work but are significantly slower for large N)
 
 ## Install
