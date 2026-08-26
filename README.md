@@ -141,8 +141,9 @@ Each comparison run outputs, among other things:
 
 ```
 chmod +x run_all_comparisons.sh
-caffeinate -i ./run_all_comparisons.sh   # caffeinate keeps macOS awake for the full run
+./run_all_comparisons.sh
 ```
+You should set your PC to not sleep during this process, as it can take several hours to complete all comparisons.
 
 Score everything afterward with:
 ```
