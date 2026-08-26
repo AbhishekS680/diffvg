@@ -211,10 +211,9 @@ print('saved error_heatmap.png')
 
 # -------------------------------------------------------------------
 # Focus phase: continue training the SAME ellipses (positions_n,
-# colors, log_a, log_b, theta), but reweight the loss using pass
-# one's error heatmap. Pixels with high error get a bigger weight, so
-# their gradient contribution dominates; pixels that were already
-# reconstructed well get weight close to 1 and are mostly left alone.
+# colors, log_a, log_b, theta), but reweight the loss using pass one's error heatmap.
+# Pixels with high error get a bigger weight
+# Pixels with low error get a smaller weight
 # -------------------------------------------------------------------
 weight_np = 1.0 + FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
 weight_map = torch.from_numpy(weight_np).to(torch.float32).unsqueeze(-1)  # (H, W, 1), broadcasts over RGB
