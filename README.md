@@ -65,6 +65,7 @@ Before installing, make sure you have the following set up on your system:
 - **C++ compiler with C++14 support**
   - Linux/macOS: GCC or Clang
   - Windows: MSVC (via the x64 Native Tools Command Prompt — see Windows note below)
+- **CUDA Toolkit** (optional for GPU acceleration; CPU-only builds work but are significantly slower for large N)
 
 ## Install
 
