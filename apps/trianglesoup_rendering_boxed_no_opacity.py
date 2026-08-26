@@ -30,9 +30,8 @@ pydiffvg.imwrite(target.cpu(), 'results/trianglesoup_rendering_boxed_no_opacity/
 vertices_n = torch.rand(N, 3, 2).clone().requires_grad_(True)  # normalized [0,1]
 colours    = torch.rand(N, 3).clone().requires_grad_(True)
 
-# Opacity fixed at 1.0 for every triangle -- not a parameter, no
-# gradient, never touched by the optimizer. Every triangle is fully
-# solid: alpha_i = coverage_i * 1.0 = coverage_i.
+# Creates the opacity tensor with all values set to 1.0,
+# indicating full opacity for each triangle.
 opacity = torch.ones(N)
 optimizer = torch.optim.Adam([vertices_n, colours], lr=1e-2)
 loss_history = []
