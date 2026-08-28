@@ -1,6 +1,6 @@
 # shepard_segmented.py
 # Per-segment Shepard reconstruction using Mean Shift segmentation
-
+import argparse
 import pydiffvg
 import torch
 import skimage.io
@@ -14,32 +14,40 @@ from sklearn.cluster import MeanShift
 import os
 import diffvg
 
+# --- Command-line arguments ---
+# Lets N_per_segment, iters, the target image, and segment size be set
+# from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=100, help='Control points per segment')
+parser.add_argument('--iters', type=int, default=100, help='Training iterations per segment')
+parser.add_argument('--seg-size', type=float, default=0.2,
+                     help='Mean Shift bandwidth -- larger value means fewer but bigger segments')
+args = parser.parse_args()
+
 # --- Parameters ---
-N_per_segment = 100 # control points per segment
+N_per_segment = args.n # control points per segment
 q = 3.0
-iters = 100
-seg_size = 0.2 # controls segment size, a larger value means fewer but bigger segments
+iters = args.iters
+seg_size = args.seg_size # controls segment size, a larger value means fewer but bigger segments
 
 # --- Load target image ---
-target_np = skimage.io.imread('imgs/fruit_basket.png').astype(np.float32) / 255.0
+target_np = skimage.io.imread(args.image).astype(np.float32) / 255.0
 target_np = target_np[:, :, :3]
 canvas_height, canvas_width = target_np.shape[0], target_np.shape[1]
 print('target shape:', target_np.shape)
-
 os.makedirs('results/shepard_segmented', exist_ok=True)
 pydiffvg.imwrite(torch.from_numpy(target_np), 'results/shepard_segmented/target.png', gamma=1.0)
 
 # --- Running Mean Shift segmentation ---
 print('Running mean shift segmentation...')
 h, w = target_np.shape[:2] # Getting image size
-
 # Creates a 2D array for every pixel and stores x, y, r, g, b
 coords = np.column_stack([
     np.indices((h, w))[1].ravel() / w, # x
     np.indices((h, w))[0].ravel() / h, # y
     target_np.reshape(-1, 3) # RGB values
 ])
-
 start = time.time()
 ms = MeanShift(bandwidth=seg_size, bin_seeding=True)
 ms.fit(coords)
@@ -73,13 +81,12 @@ print('Running per-segment Shepard optimization...')
 diffvg.reset_shepard_timing()
 final_image = np.zeros_like(target_np) # Starts off as empty, but the segments will be written on it
 target_tensor = torch.from_numpy(target_np)
-
 all_positions = []  # collect final control point positions from each segment
 segment_losses = []
 
 for seg_id in range(n_segments):
     mask = (labels_2d == seg_id) # A boolean grid where its true for only pixels in the segment
-    
+
     # Edge case if a boundary has no pixels
     if mask.sum() == 0:
         continue
@@ -99,9 +106,7 @@ for seg_id in range(n_segments):
     # seg_color = target_np[mask].mean(axis=0)
     # colors = torch.tensor(seg_color).unsqueeze(0).repeat(N_per_segment, 1)
     # colors = (colors + torch.rand_like(colors) * 0.1).clamp(0, 1).clone().requires_grad_(True)
-
     colors = torch.rand(N_per_segment, 3).clamp(0, 1).clone().requires_grad_(True)
-
     optimizer = torch.optim.Adam([positions_n, colors], lr=1e-2)
     mask_tensor = torch.from_numpy(mask).unsqueeze(-1).expand(-1, -1, 3) # True is 1.0, and false is 0.0
 
@@ -110,7 +115,6 @@ for seg_id in range(n_segments):
         positions = positions_n * torch.tensor([canvas_width, canvas_height])
         img = pydiffvg.ShepardRenderFunction.apply(
             positions, colors, q, canvas_width, canvas_height)
-
         # Loss only on pixels belonging to this segment
         loss = ((img - target_tensor) * mask_tensor).pow(2).sum()
         loss.backward()
@@ -140,9 +144,7 @@ for seg_id in range(n_segments):
         img = pydiffvg.ShepardRenderFunction.apply(
             positions, colors, q, canvas_width, canvas_height)
         final_image[mask] = img.clamp(0, 1).numpy()[mask]
-
         all_positions.append(positions_n.detach() * torch.tensor([canvas_width, canvas_height]))
-
         # Save frame showing reconstruction progress after each segment
         frame = torch.from_numpy(final_image.astype(np.float32))
         pydiffvg.imwrite(frame, f'results/shepard_segmented/iter_{seg_id}.png', gamma=1.0)
@@ -176,11 +178,9 @@ print('saved loss_per_segment.png')
 # -----------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 8))
 ax.imshow(final_image)
-
 for pos in all_positions:
     pos_np = pos.cpu().numpy()
     ax.scatter(pos_np[:, 0], pos_np[:, 1], c='red', s=10, edgecolors='white', linewidths=0.5)
-
 ax.set_xlim(0, canvas_width)
 ax.set_ylim(canvas_height, 0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -193,10 +193,8 @@ print('saved final_labeled.png')
 # Per-pixel error heatmap
 # -------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
-
 # Per-pixel error: mean squared difference across RGB channels
 error_map = ((target_np - final_image) ** 2).mean(axis=2)
-
 im = ax.imshow(error_map, cmap='inferno')
 ax.axis('off')
 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -207,26 +205,20 @@ print('saved error_heatmap.png')
 # ---------------------------------------------------------------
 # Comparison: target | segmentation | rendered | error heatmap
 # ---------------------------------------------------------------
-
 fig, axes = plt.subplots(1, 4, figsize=(24, 6))
-
 axes[0].imshow(target_np)
 axes[0].set_title('Target')
 axes[0].axis('off')
-
 axes[1].imshow(seg_viz)
 axes[1].set_title(f'Segmentation ({n_segments} regions)')
 axes[1].axis('off')
-
 axes[2].imshow(final_image)
 axes[2].set_title(f'Segmented Shepard ({N_per_segment} pts/segment)')
 axes[2].axis('off')
-
 im = axes[3].imshow(error_map, cmap='inferno')
 axes[3].set_title('Error heatmap')
 axes[3].axis('off')
 fig.colorbar(im, ax=axes[3], fraction=0.046, pad=0.04)
-
 plt.savefig('results/shepard_segmented/all_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved all_comparison.png')
