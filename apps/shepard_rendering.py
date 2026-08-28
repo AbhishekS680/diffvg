@@ -1,5 +1,7 @@
 # shepard_rendering.py
 # Implemented using diffvg's ShepardField C++ renderer
+import argparse
+import os
 import pydiffvg
 import torch
 import skimage.io
@@ -8,9 +10,17 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import diffvg
 
-N = 1000 # Number of control points
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of control points')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
+N = args.n # Number of control points
 q = 3.0 # Controls how sharply the falloff happens for each control point
-iters = 200
+iters = args.iters
 
 # --- Focus phase ---
 # After the normal training loop finishes, run a second phase of
@@ -26,7 +36,7 @@ FOCUS_WEIGHT_SCALE = 5.0  # how much extra weight the worst pixels get, relative
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/shepard_rendering/target.png', gamma=1.0)
@@ -171,7 +181,6 @@ print('saved error_heatmap.png')
 # pixels that were already reconstructed well get weight close to 1
 # and are mostly left alone.
 # -------------------------------------------------------------------
-import os
 weight_np = 1.0 + FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
 weight_map = torch.from_numpy(weight_np).to(torch.float32).unsqueeze(-1)  # (H, W, 1), broadcasts over RGB
 
