@@ -1,6 +1,6 @@
 # trianglesoup_rendering_boxed_no_opacity.py
 # Same as trianglesoup_rendering_boxed.py, but with opacity fixed at 1.0
-
+import argparse
 import pydiffvg
 import diffvg
 import torch
@@ -11,17 +11,26 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 from matplotlib.patches import Polygon as MplPolygon
+
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of triangles')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/trianglesoup_rendering_boxed_no_opacity', exist_ok=True)
 
-N = 1000
-iters = 200
-
+N = args.n
+iters = args.iters
 SOFTNESS_START = 4.0
 SOFTNESS_END   = 0.5
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/trianglesoup_rendering_boxed_no_opacity/target.png', gamma=1.0)
@@ -29,7 +38,6 @@ pydiffvg.imwrite(target.cpu(), 'results/trianglesoup_rendering_boxed_no_opacity/
 # Initialize N triangles (vertices, colour) randomly
 vertices_n = torch.rand(N, 3, 2).clone().requires_grad_(True)  # normalized [0,1]
 colours    = torch.rand(N, 3).clone().requires_grad_(True)
-
 # Creates the opacity tensor with all values set to 1.0,
 # indicating full opacity for each triangle.
 opacity = torch.ones(N)
@@ -52,9 +60,11 @@ for t in range(iters):
     loss = (img - target).pow(2).sum()  # how wrong is the current render
     loss_history.append(loss.item())
     loss.backward()  # backward -> C++ fills gradients -> deposits into .grad
+
     print('iter', t, 'loss', loss.item(), 'softness', round(softness, 3))
     with open('results/trianglesoup_rendering_boxed_no_opacity/softness_log.txt', 'a') as f:
         f.write(f'iter {t}: softness={softness:.4f} loss={loss.item():.4f}\n')
+
     optimizer.step()  # Adam reads .grad -> moves vertices_n, colours only
 
     if t == iters - 2:
@@ -71,6 +81,7 @@ for t in range(iters):
 print(f'final loss: {loss.item():.4f}')
 with open('results/trianglesoup_rendering_boxed_no_opacity/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+
 diffvg.print_trianglesoup_boxed_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_trianglesoup_boxed_timing()
 with open('results/trianglesoup_rendering_boxed_no_opacity/timing.txt', 'w') as f:

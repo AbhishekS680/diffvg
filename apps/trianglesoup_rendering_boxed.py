@@ -3,6 +3,7 @@
 # renderer. Independent triangles (no shared vertices/edges, unlike a
 # mesh), each with a flat colour and a learnable opacity, composited via
 # alpha-over in index order. Uses the C++ TriangleSoupBoxedRenderFunction.
+import argparse
 import pydiffvg
 import diffvg
 import torch
@@ -14,10 +15,18 @@ import os
 import numpy as np
 from matplotlib.patches import Polygon as MplPolygon
 
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of triangles')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/trianglesoup_rendering_boxed', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 # --- Softness annealing ---
 # Coverage uses a sigmoid-smoothed edge test with width SOFTNESS pixels.
@@ -39,7 +48,7 @@ FOCUS_WEIGHT_SCALE = 5.0  # how much extra weight the worst pixels get, relative
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/trianglesoup_rendering_boxed/target.png', gamma=1.0)
