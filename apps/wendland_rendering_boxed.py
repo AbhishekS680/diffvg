@@ -1,6 +1,7 @@
 # wendland_rendering_boxed.py
 # Same as wendland_rendering.py, but uses the tile-grid accelerated
 # renderer
+import argparse
 import pydiffvg
 import diffvg
 import torch
@@ -12,10 +13,18 @@ import os
 import numpy as np
 from matplotlib.patches import Ellipse
 
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of ellipses')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/wendland_rendering_boxed', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 # --- Semi-axis size penalty ---
 # Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
@@ -28,14 +37,18 @@ AXIS_PENALTY_WEIGHT = 1.0
 # --- Focus phase ---
 # After the normal training loop finishes, run a second phase of
 # iterations on the SAME ellipses, but reweight the per-pixel loss
-# using the error heatmap from pass one
+# using the error heatmap from pass one -- pixels that were
+# reconstructed badly get more gradient pull, pixels that were already
+# good get left mostly alone. Nothing is frozen, nothing new is added,
+# the existing ellipses just get pushed harder toward fixing their own
+# mistakes.
 FOCUS_ITERS = 100
 FOCUS_WEIGHT_SCALE = 5.0  # how much extra weight the worst pixels get, relative to the best
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/wendland_rendering_boxed/target.png', gamma=1.0)
@@ -211,9 +224,10 @@ print('saved error_heatmap.png')
 
 # -------------------------------------------------------------------
 # Focus phase: continue training the SAME ellipses (positions_n,
-# colors, log_a, log_b, theta), but reweight the loss using pass one's error heatmap.
-# Pixels with high error get a bigger weight
-# Pixels with low error get a smaller weight
+# colors, log_a, log_b, theta), but reweight the loss using pass
+# one's error heatmap. Pixels with high error get a bigger weight, so
+# their gradient contribution dominates; pixels that were already
+# reconstructed well get weight close to 1 and are mostly left alone.
 # -------------------------------------------------------------------
 weight_np = 1.0 + FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
 weight_map = torch.from_numpy(weight_np).to(torch.float32).unsqueeze(-1)  # (H, W, 1), broadcasts over RGB
@@ -327,7 +341,7 @@ axes[0].imshow(target_np)
 axes[0].set_title('Target')
 axes[0].axis('off')
 axes[1].imshow(final_np)
-axes[1].set_title('Rendered (Wendland C2, boxed)')
+axes[1].set_title('Rendered (boxed)')
 axes[1].axis('off')
 im = axes[2].imshow(error_map, cmap='inferno')
 axes[2].set_title('Error heatmap')

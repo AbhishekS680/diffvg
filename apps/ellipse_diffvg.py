@@ -2,7 +2,7 @@
 # Baseline comparison: standard diffvg Ellipse shapes (hard-edged, axis-aligned,
 # Monte Carlo edge-sampled gradients) fit to the same target as the Wendland
 # renderer, for a fair fidelity/speed comparison.
-
+import argparse
 import pydiffvg
 import torch
 import skimage.io
@@ -12,13 +12,23 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 from matplotlib.patches import Ellipse
+
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of ellipses')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/ellipse_diffvg', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/ellipse_diffvg/target.png', gamma=1.0)
@@ -28,7 +38,6 @@ pydiffvg.imwrite(target.cpu(), 'results/ellipse_diffvg/target.png', gamma=1.0)
 positions_n = torch.rand(N, 2).clone().requires_grad_(True)
 log_a = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
 log_b = torch.full((N,), torch.log(torch.tensor(0.05))).clone().requires_grad_(True)
-
 # RGB is learnable; alpha is fixed at 1.0 (not in the optimizer) so these
 # stay genuinely hard-edged/opaque, matching the "baseline" framing --
 # letting alpha drift would make this a soft-blend comparison instead.
@@ -59,20 +68,26 @@ for t in range(iters):
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
+
     print('iter', t, 'loss', loss.item())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
+
     optimizer.step()
+
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
+
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors_rgb.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
+
     pydiffvg.imwrite(img.clamp(0, 1).detach().cpu(), 'results/ellipse_diffvg/iter_{}.png'.format(t), gamma=1.0)
+
 print(f'final loss: {loss.item():.4f}')
 with open('results/ellipse_diffvg/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
@@ -96,7 +111,6 @@ b_px = torch.exp(log_b) * canvas_width
 colors = torch.cat([colors_rgb, alpha_fixed], dim=1)
 shapes = []
 shape_groups = []
-
 for i in range(N):
     ellipse = pydiffvg.Ellipse(radius=torch.stack([a_px[i], b_px[i]]),
                                center=positions_px[i])
@@ -135,6 +149,7 @@ ax.axis('off')
 plt.savefig('results/ellipse_diffvg/final_labeled.png', bbox_inches='tight', pad_inches=0, dpi=150)
 plt.close(fig)
 print('saved final_labeled.png')
+
 final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # -------------------------------------------------------------------
@@ -187,6 +202,7 @@ fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
 plt.savefig('results/ellipse_diffvg/all_comparison.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved all_comparison.png')
+
 # Convert the intermediate renderings to a video.
 from subprocess import call
 call(["ffmpeg", "-framerate", "24", "-i",
