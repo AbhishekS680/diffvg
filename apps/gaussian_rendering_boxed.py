@@ -1,5 +1,6 @@
 # gaussian_rendering_boxed.py
 # Same as gaussian_rendering.py, but uses the tile-grid accelerated renderer
+import argparse
 import pydiffvg
 import diffvg
 import torch
@@ -11,10 +12,18 @@ import os
 import numpy as np
 from matplotlib.patches import Ellipse
 
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of ellipses')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/gaussian_rendering_boxed', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 # --- Semi-axis size penalty ---
 # Discourages a/b (in pixels) from growing past MAX_AXIS_PX. Soft quadratic
@@ -28,14 +37,13 @@ AXIS_PENALTY_WEIGHT = 1.0
 # After the normal training loop finishes, run a second phase of
 # iterations on the SAME ellipses, but reweight the per-pixel loss
 # using the error heatmap from pass one
-
 FOCUS_ITERS = 100
 FOCUS_WEIGHT_SCALE = 5.0  # how much extra weight the worst pixels get, relative to the best
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]  # keep RGB only
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/gaussian_rendering_boxed/target.png', gamma=1.0)

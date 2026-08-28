@@ -1,7 +1,7 @@
 # gaussian_rendering.py
 # Anisotropic ellipse renderer using a fixed Gaussian RBF kernel:
 # f(t) = exp(-t^2 / (2*sigma^2)), sigma = 1/3 (fixed in diffvg.cpp, not learnable)
-
+import argparse
 import pydiffvg
 import diffvg
 import torch
@@ -13,14 +13,22 @@ import os
 import numpy as np
 from matplotlib.patches import Ellipse
 
+# --- Command-line arguments ---
+# Lets N, iters, and the target image be set from the shell
+parser = argparse.ArgumentParser()
+parser.add_argument('--image', default='imgs/fruit_basket.png', help='Target image path')
+parser.add_argument('--n', type=int, default=1000, help='Number of ellipses')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
+args = parser.parse_args()
+
 os.makedirs('results/gaussian_rendering', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
-target = torch.from_numpy(skimage.io.imread('imgs/fruit_basket.png')).to(torch.float32) / 255.0
+target = torch.from_numpy(skimage.io.imread(args.image)).to(torch.float32) / 255.0
 target = target[:, :, :3]
 canvas_height, canvas_width = target.shape[0], target.shape[1]
 pydiffvg.imwrite(target.cpu(), 'results/gaussian_rendering/target.png', gamma=1.0)
@@ -45,26 +53,32 @@ for t in range(iters):
     loss = (img - target).pow(2).sum()
     loss_history.append(loss.item())
     loss.backward()
+
     print('iter', t, 'loss', loss.item())
     a_current = torch.exp(log_a.detach())
     b_current = torch.exp(log_b.detach())
     print('a range:', a_current.min().item(), '-', a_current.max().item())
     print('b range:', b_current.min().item(), '-', b_current.max().item())
+
     optimizer.step()
+
     if t == iters - 2:
         second_last_positions_px = (positions_n.detach() * torch.tensor([canvas_width, canvas_height])).clone().numpy()
+
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-
         # theta unclamped, rotation wraps naturally
+
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
                       'results/gaussian_rendering/iter_{}.png'.format(t), gamma=1.0)
+
 print(f'final loss: {loss.item():.4f}')
 with open('results/gaussian_rendering/final_loss.txt', 'w') as f:
     f.write(str(loss.item()))
+
 diffvg.print_ellipse_gaussian_timing()
 fwd_ms, fwd_calls, bwd_ms, bwd_calls = diffvg.get_ellipse_gaussian_timing()
 with open('results/gaussian_rendering/timing.txt', 'w') as f:
@@ -120,16 +134,15 @@ fig, ax = plt.subplots(figsize=(8, 8))
 fig.patch.set_facecolor('black')
 display_img = final.detach().clamp(0, 1).cpu().numpy()
 ALPHA_CUTOFF = 0.02
-
 # Treat near-black pixels (faint kernel fringe / no real ellipse coverage) as transparent
 alpha_mask = (display_img.max(axis=2) > ALPHA_CUTOFF).astype(np.float32)
 rgba_img = np.dstack([display_img, alpha_mask])
 ax.imshow(rgba_img)
+
 pos_np = positions_px.detach().cpu().numpy()
 a_np = a_px.detach().cpu().numpy()
 b_np = b_px.detach().cpu().numpy()
 theta_np = theta.detach().cpu().numpy()
-
 # Gaussian kernel: exp(-t^2 / (2*sigma^2)) = ALPHA_CUTOFF, solve for t directly
 # (no bisection needed, unlike Wendland's polynomial form)
 t_boundary = sigma * np.sqrt(-2 * np.log(ALPHA_CUTOFF))
@@ -148,6 +161,7 @@ plt.savefig('results/gaussian_rendering/final_labeled.png', bbox_inches='tight',
             facecolor='black')
 plt.close(fig)
 print('saved final_labeled.png')
+
 final_np = final.detach().clamp(0, 1).cpu().numpy()
 
 # -------------------------------------------------------------------
@@ -182,6 +196,7 @@ fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 plt.savefig('results/gaussian_rendering/error_heatmap.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
 print('saved error_heatmap.png')
+
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 axes[0].imshow(target_np)
 axes[0].set_title('Target')
