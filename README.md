@@ -211,7 +211,7 @@ values to reproduce or vary these.
 
 | Target | Shepard Reconstruction |
 | ------ | ----------------------- |
-| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Shepard result](docs/imgs/baboon_shepard.png) |
+| <img src="docs/imgs/baboon.png" width="400"> | <img src="docs/imgs/baboon_shepard.png" width="400"> |
 
 ```
 python shepard_rendering.py --image imgs/baboon.png --n 1000 --iters 200
@@ -223,7 +223,7 @@ python shepard_rendering.py --image imgs/baboon.png --n 1000 --iters 200
 
 | Target | Wendland C2 Reconstruction |
 | ------ | ---------------------------- |
-| ![Spider-Man target](docs/imgs/spiderman.png) | ![Spider-Man Wendland C2 result](docs/imgs/spiderman_wendland.png) |
+| <img src="docs/imgs/spiderman.png" width="400"> | <img src="docs/imgs/spiderman_wendland.png" width="400"> |
 
 ```
 python wendland_rendering_boxed.py --image imgs/spiderman.png --n 1000 --iters 200
@@ -235,7 +235,7 @@ python wendland_rendering_boxed.py --image imgs/spiderman.png --n 1000 --iters 2
 
 | Target | Gaussian RBF Reconstruction |
 | ------ | ----------------------------- |
-| ![Hokusai Wave target](docs/imgs/hokusai.png) | ![Hokusai Wave Gaussian RBF result](docs/imgs/hokusai_gaussian.png) |
+| <img src="docs/imgs/hokusai.png" width="400"> | <img src="docs/imgs/hokusai_gaussian.png" width="400"> |
 
 ```
 python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
@@ -247,7 +247,7 @@ python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 
 | Target | Triangle Soup Reconstruction |
 | ------ | ------------------------------ |
-| ![Falling Water target](docs/imgs/fallingwater.png) | ![Falling Water Triangle Soup result](docs/imgs/fallingwater_trianglesoup.png) |
+| <img src="docs/imgs/fallingwater.png" width="400"> | <img src="docs/imgs/fallingwater_trianglesoup.png" width="400"> |
 
 ```
 python trianglesoup_rendering_boxed.py --image imgs/fallingwater.png --n 1000 --iters 200
@@ -259,7 +259,7 @@ python trianglesoup_rendering_boxed.py --image imgs/fallingwater.png --n 1000 --
 
 | Target | Polynomial Kernel Reconstruction |
 | ------ | ---------------------------------- |
-| ![Flower target](docs/imgs/flower.png) | ![Flower Polynomial Kernel result](docs/imgs/flower_poly_kernel.png) |
+| <img src="docs/imgs/flower.png" width="400"> | <img src="docs/imgs/flower_poly_kernel.png" width="400"> |
 
 ```
 python polynomial_kernel_rendering.py --image imgs/flower.png --n 1000 --iters 200
