@@ -37,8 +37,8 @@ AXIS_PENALTY_WEIGHT = 1.0
 # After the normal training loop finishes, run a second phase of
 # iterations on the SAME ellipses, but reweight the per-pixel loss
 # using the error heatmap from pass one
-FOCUS_ITERS = 100
-FOCUS_WEIGHT_SCALE = 5.0  # how much extra weight the worst pixels get, relative to the best
+FOCUS_ITERS = 200
+FOCUS_WEIGHT_SCALE = 6.0  # how much extra weight the worst pixels get, relative to the best
 
 # Use GPU if available
 pydiffvg.set_use_gpu(torch.cuda.is_available())
@@ -224,7 +224,7 @@ print('saved error_heatmap.png')
 # their gradient contribution dominates; pixels that were already
 # reconstructed well get weight close to 1 and are mostly left alone.
 # -------------------------------------------------------------------
-weight_np = 1.0 + FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
+weight_np = FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
 weight_map = torch.from_numpy(weight_np).to(torch.float32).unsqueeze(-1)  # (H, W, 1), broadcasts over RGB
 
 fig, ax = plt.subplots(figsize=(8, 6))
