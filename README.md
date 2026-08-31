@@ -202,34 +202,44 @@ python setup.py build --debug install
 ---
 
 ## More examples + command-line arguments
-do this later
-| Image 1 Title | Image 2 Title |
-| ------------- | ------------- |
-| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Shepard Result](docs/imgs/baboon_shepard.png) |
+
+Each example below shows the target image alongside a primitive's reconstruction, along
+with the command used to generate it. Swap in your own `--image`, `--n`, and `--iters`
+values to reproduce or vary these.
+
+### Baboon — Shepard IDW
+
+| Target | Shepard Reconstruction |
+| ------ | ----------------------- |
+| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Shepard result](docs/imgs/baboon_shepard.png) |
+
+```
+python shepard_rendering.py --image imgs/baboon.png --n 1000 --iters 200
+```
 
 ---
 
-| Image 1 Title | Image 2 Title |
-| ------------- | ------------- |
-| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Gaussian Result](docs/imgs/baboon_gaussian.png) |
+### Baboon — Gaussian RBF
+
+| Target | Gaussian Reconstruction |
+| ------ | ------------------------- |
+| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Gaussian result](docs/imgs/baboon_gaussian.png) |
+
+```
+python gaussian_rendering_boxed.py --image imgs/baboon.png --n 1000 --iters 200
+```
 
 ---
 
-| Image 1 Title | Image 2 Title |
-| ------------- | ------------- |
-| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Trianglesoup Result](docs/imgs/baboon_trianglesoup.png) |
+### Baboon — Triangle Soup
 
----
+| Target | Triangle Soup Reconstruction |
+| ------ | ------------------------------ |
+| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Triangle Soup result](docs/imgs/baboon_trianglesoup.png) |
 
-| Image 1 Title | Image 2 Title |
-| ------------- | ------------- |
-| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
-
----
-
-| Image 1 Title | Image 2 Title |
-| ------------- | ------------- |
-| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+```
+python trianglesoup_rendering_boxed.py --image imgs/baboon.png --n 1000 --iters 200
+```
 
 ---
 
