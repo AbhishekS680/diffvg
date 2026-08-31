@@ -219,26 +219,38 @@ python shepard_rendering.py --image imgs/baboon.png --n 1000 --iters 200
 
 ---
 
-### Baboon — Gaussian RBF
+### Spider-Man — Wendland C2
 
-| Target | Gaussian Reconstruction |
-| ------ | ------------------------- |
-| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Gaussian result](docs/imgs/baboon_gaussian.png) |
+| Target | Wendland C2 Reconstruction |
+| ------ | ---------------------------- |
+| ![Spider-Man target](docs/imgs/spiderman.png) | ![Spider-Man Wendland C2 result](docs/imgs/spiderman_wendland.png) |
 
 ```
-python gaussian_rendering_boxed.py --image imgs/baboon.png --n 1000 --iters 200
+python wendland_rendering_boxed.py --image imgs/spiderman.png --n 1000 --iters 200
 ```
 
 ---
 
-### Baboon — Triangle Soup
+### Hokusai Wave — Gaussian RBF
 
-| Target | Triangle Soup Reconstruction |
-| ------ | ------------------------------ |
-| ![Baboon target](docs/imgs/baboon.png) | ![Baboon Triangle Soup result](docs/imgs/baboon_trianglesoup.png) |
+| Target | Gaussian RBF Reconstruction |
+| ------ | ----------------------------- |
+| ![Hokusai Wave target](docs/imgs/hokusai.png) | ![Hokusai Wave Gaussian RBF result](docs/imgs/hokusai_gaussian.png) |
 
 ```
-python trianglesoup_rendering_boxed.py --image imgs/baboon.png --n 1000 --iters 200
+python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
+```
+
+---
+
+### Flower — Polynomial Kernel
+
+| Target | Polynomial Kernel Reconstruction |
+| ------ | ---------------------------------- |
+| ![Flower target](docs/imgs/flower.png) | ![Flower Polynomial Kernel result](docs/imgs/flower_polynomial.png) |
+
+```
+python polynomial_rendering_boxed.py --image imgs/flower.png --n 1000 --iters 200
 ```
 
 ---
