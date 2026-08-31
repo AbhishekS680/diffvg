@@ -247,7 +247,7 @@ python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 
 | Target | Polynomial Kernel Reconstruction |
 | ------ | ---------------------------------- |
-| ![Flower target](docs/imgs/flower.png) | ![Flower Polynomial Kernel result](docs/imgs/flower_polynomial.png) |
+| ![Flower target](docs/imgs/flower.png) | ![Flower Polynomial Kernel result](docs/imgs/flower_poly_kernel.png) |
 
 ```
 python polynomial_rendering_boxed.py --image imgs/flower.png --n 1000 --iters 200
