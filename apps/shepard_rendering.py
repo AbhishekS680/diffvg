@@ -191,27 +191,24 @@ ax.set_title(f'Focus weight map (scale={FOCUS_WEIGHT_SCALE}, max weight={weight_
 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 plt.savefig('results/shepard_rendering/focus_weight_map.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
+
 print('saved focus_weight_map.png')
 
+focus_optimizer = torch.optim.Adam([positions_n, colors], lr=5e-3)  # new optimizer state, slightly lower lr
 focus_loss_history = []
 os.makedirs('results/shepard_rendering/focus_iters', exist_ok=True)
-
 for t in range(FOCUS_ITERS):
-    optimizer.zero_grad()
+    focus_optimizer.zero_grad()
     positions = positions_n * torch.tensor([canvas_width, canvas_height])
     img = pydiffvg.ShepardRenderFunction.apply(positions, colors, q, canvas_width, canvas_height)
     focus_loss = ((img - target).pow(2) * weight_map).sum()
     focus_loss_history.append(focus_loss.item())
     focus_loss.backward()
-
     print('focus iter', t, 'loss', focus_loss.item())
-
-    optimizer.step()
-
+    focus_optimizer.step()
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
-
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(), 'results/shepard_rendering/focus_iters/iter_{}.png'.format(t), gamma=1.0)
 
 print(f'final focus loss: {focus_loss.item():.4f}')
