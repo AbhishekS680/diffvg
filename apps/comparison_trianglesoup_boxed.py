@@ -1,7 +1,6 @@
 # comparison_trianglesoup_boxed.py
 # Comparison-script version of trianglesoup_rendering_boxed.py
 # Uses the C++ TriangleSoupBoxedRenderFunction
-
 import argparse
 import pydiffvg
 import diffvg
@@ -18,12 +17,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--target', required=True)                     # sharper image
 parser.add_argument('--degraded', required=True)                   # blurrier image (used as starting canvas)
 parser.add_argument('--outdir', default='results/comparison_trianglesoup_boxed')
+parser.add_argument('--n', type=int, default=1000, help='Number of triangles')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
 args = parser.parse_args()
 os.makedirs(args.outdir, exist_ok=True)
 os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
-N = 1000
-iters = 200
+N = args.n
+iters = args.iters
 
 # --- Softness annealing ---
 # Coverage uses a sigmoid-smoothed edge test with width SOFTNESS pixels.
@@ -52,7 +53,6 @@ assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_
     'Degraded and original images must be the same size'
 
 # --- Baseline error heatmap: degraded vs original, before any reconstruction ---
-
 original_np = original.cpu().numpy()
 degraded_error_map = ((original_np - degraded_np) ** 2).mean(axis=2)
 print(f'baseline (degraded) mean error: {degraded_error_map.mean():.6f}')
