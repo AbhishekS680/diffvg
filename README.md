@@ -262,7 +262,7 @@ python trianglesoup_rendering_boxed.py --image imgs/fallingwater.png --n 1000 --
 | ![Flower target](docs/imgs/flower.png) | ![Flower Polynomial Kernel result](docs/imgs/flower_poly_kernel.png) |
 
 ```
-python polynomial_rendering_boxed.py --image imgs/flower.png --n 1000 --iters 200
+python polynomial_kernel_rendering.py --image imgs/flower.png --n 1000 --iters 200
 ```
 
 ---
