@@ -243,6 +243,18 @@ python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 
 ---
 
+### Falling Water — Triangle Soup
+
+| Target | Triangle Soup Reconstruction |
+| ------ | ------------------------------ |
+| ![Falling Water target](docs/imgs/falling_water.png) | ![Falling Water Triangle Soup result](docs/imgs/falling_water_trianglesoup.png) |
+
+```
+python trianglesoup_rendering_boxed.py --image imgs/falling_water.png --n 1000 --iters 200
+```
+
+---
+
 ### Flower — Polynomial Kernel
 
 | Target | Polynomial Kernel Reconstruction |
