@@ -229,13 +229,14 @@ ax.set_title(f'Focus weight map (scale={FOCUS_WEIGHT_SCALE}, max weight={weight_
 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 plt.savefig('results/trianglesoup_rendering_boxed/focus_weight_map.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
+
 print('saved focus_weight_map.png')
 
+focus_optimizer = torch.optim.Adam([vertices_n, colours, opacity_logit], lr=5e-3)  # new optimizer state, slightly lower lr
 focus_loss_history = []
 os.makedirs('results/trianglesoup_rendering_boxed/focus_iters', exist_ok=True)
-
 for t in range(FOCUS_ITERS):
-    optimizer.zero_grad()
+    focus_optimizer.zero_grad()
     vertices_px = vertices_n * torch.tensor([canvas_width, canvas_height])
     opacity = torch.sigmoid(opacity_logit)
     img = pydiffvg.TriangleSoupBoxedRenderFunction.apply(
@@ -243,17 +244,13 @@ for t in range(FOCUS_ITERS):
     focus_loss = ((img - target).pow(2) * weight_map).sum()
     focus_loss_history.append(focus_loss.item())
     focus_loss.backward()
-
     print('focus iter', t, 'loss', focus_loss.item())
-
-    optimizer.step()
-
+    focus_optimizer.step()
     with torch.no_grad():
         vertices_n.clamp_(0.0, 1.0)
         colours.clamp_(0.0, 1.0)
         # No clamp needed for opacity_logit -- sigmoid already bounds the
         # actual opacity to [0,1] regardless of the logit's raw value.
-
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
                       'results/trianglesoup_rendering_boxed/focus_iters/iter_{}.png'.format(t), gamma=1.0)
 
