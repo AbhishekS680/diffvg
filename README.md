@@ -183,13 +183,10 @@ python n_vs_time_trianglesoup.py --image imgs/cat.png --n-values 100,500,1000 --
 python n_vs_time_trianglesoup_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
 ```
 
-`--n-values` is a comma-separated list (default `50,100,250,500,750,1000,1500,2000,3000,4000,5000`).
-`--sleep` controls the cooldown (seconds) between each N value, to avoid thermal
-throttling skewing later measurements. Each script writes a `.txt` timing table and a
+`--n-values` is a comma-separated list (default `50,100,250,500,750,1000,1500,2000,3000,4000,5000`). `--sleep` controls the cooldown (seconds) between each N value, to avoid thermal throttling skewing later measurements. Each script writes a `.txt` timing table and a
 `.png` plot to `results/n_vs_time/`.
 
-Run every primitive's sweep at once with `run_all_n_vs_time.sh`, which accepts `IMAGE`,
-`N_VALUES`, and `SLEEP` as environment variables:
+Run every primitive's sweep at once with `run_all_n_vs_time.sh`, which accepts `IMAGE`, `N_VALUES`, and `SLEEP` as environment variables:
 
 ```
 chmod +x run_all_n_vs_time.sh
@@ -206,6 +203,30 @@ python setup.py build --debug install
 
 ## More examples + command-line arguments
 do this later
+| Image 1 Title | Image 2 Title |
+| ------------- | ------------- |
+| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+
+---
+
+| Image 1 Title | Image 2 Title |
+| ------------- | ------------- |
+| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+
+---
+
+| Image 1 Title | Image 2 Title |
+| ------------- | ------------- |
+| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+
+---
+
+| Image 1 Title | Image 2 Title |
+| ------------- | ------------- |
+| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+
+---
+
 | Image 1 Title | Image 2 Title |
 | ------------- | ------------- |
 | ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
