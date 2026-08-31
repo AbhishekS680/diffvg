@@ -247,7 +247,7 @@ python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 
 | Target | Triangle Soup Reconstruction |
 | ------ | ------------------------------ |
-| ![Falling Water target](docs/imgs/falling_water.png) | ![Falling Water Triangle Soup result](docs/imgs/falling_water_trianglesoup.png) |
+| ![Falling Water target](docs/imgs/fallingwater.png) | ![Falling Water Triangle Soup result](docs/imgs/fallingwater_trianglesoup.png) |
 
 ```
 python trianglesoup_rendering_boxed.py --image imgs/falling_water.png --n 1000 --iters 200
