@@ -15,13 +15,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--target', required=True)                     # sharper image
 parser.add_argument('--degraded', required=True)                   # blurrier image (reference only)
 parser.add_argument('--outdir', default='results/comparison_shepard')
+parser.add_argument('--n', type=int, default=1000, help='Number of control points')
+parser.add_argument('--iters', type=int, default=200, help='Number of training iterations')
 args = parser.parse_args()
 os.makedirs(args.outdir, exist_ok=True)
 os.makedirs(f'{args.outdir}/iters', exist_ok=True)
 
-N = 1000
+N = args.n
 q = 3.0
-iters = 200
+iters = args.iters
 
 pydiffvg.set_use_gpu(torch.cuda.is_available())
 
@@ -41,6 +43,8 @@ assert degraded_np.shape[0] == canvas_height and degraded_np.shape[1] == canvas_
     'Degraded and original images must be the same size'
 
 # --- Baseline error heatmap: degraded vs original, before any reconstruction ---
+# Shows how much error exists before the optimizer does anything, so you
+# can see how much of that error each primitive actually recovers.
 original_np = original.cpu().numpy()
 degraded_error_map = ((original_np - degraded_np) ** 2).mean(axis=2)
 print(f'baseline (degraded) mean error: {degraded_error_map.mean():.6f}')
