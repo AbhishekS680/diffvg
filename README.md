@@ -205,19 +205,19 @@ python setup.py build --debug install
 do this later
 | Image 1 Title | Image 2 Title |
 | ------------- | ------------- |
-| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Shepard Result](docs/imgs/baboon_shepard.png) |
 
 ---
 
 | Image 1 Title | Image 2 Title |
 | ------------- | ------------- |
-| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Gaussian Result](docs/imgs/baboon_gaussian.png) |
 
 ---
 
 | Image 1 Title | Image 2 Title |
 | ------------- | ------------- |
-| ![Alt Text 1](docs/imgs/kernel_comparison.png) | ![Alt Text 2](docs/imgs/kernel_comparison.png) |
+| ![Baboon Target Image](docs/imgs/baboon.png) | ![Baboon Trianglesoup Result](docs/imgs/baboon_trianglesoup.png) |
 
 ---
 
