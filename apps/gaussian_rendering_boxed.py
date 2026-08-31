@@ -234,13 +234,14 @@ ax.set_title(f'Focus weight map (scale={FOCUS_WEIGHT_SCALE}, max weight={weight_
 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 plt.savefig('results/gaussian_rendering_boxed/focus_weight_map.png', bbox_inches='tight', dpi=150)
 plt.close(fig)
+
 print('saved focus_weight_map.png')
 
+focus_optimizer = torch.optim.Adam([positions_n, colors, log_a, log_b, theta], lr=5e-3)  # new optimizer state, slightly lower lr
 focus_loss_history = []
 os.makedirs('results/gaussian_rendering_boxed/focus_iters', exist_ok=True)
-
 for t in range(FOCUS_ITERS):
-    optimizer.zero_grad()
+    focus_optimizer.zero_grad()
     positions_px = positions_n * torch.tensor([canvas_width, canvas_height])
     a_px = torch.exp(log_a) * canvas_width
     b_px = torch.exp(log_b) * canvas_width
@@ -249,17 +250,13 @@ for t in range(FOCUS_ITERS):
     focus_loss = ((img - target).pow(2) * weight_map).sum()
     focus_loss_history.append(focus_loss.item())
     focus_loss.backward()
-
     print('focus iter', t, 'loss', focus_loss.item())
-
-    optimizer.step()
-
+    focus_optimizer.step()
     with torch.no_grad():
         positions_n.clamp_(0.0, 1.0)
         colors.clamp_(0.0, 1.0)
         log_a.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
         log_b.clamp_(torch.log(torch.tensor(0.01)), torch.log(torch.tensor(1.0)))
-
     pydiffvg.imwrite(img.detach().clamp(0, 1).cpu(),
                       'results/gaussian_rendering_boxed/focus_iters/iter_{}.png'.format(t), gamma=1.0)
 
