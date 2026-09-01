@@ -193,6 +193,21 @@ chmod +x run_all_n_vs_time.sh
 N_VALUES=100,500,1000 SLEEP=5 IMAGE=imgs/cat.png ./run_all_n_vs_time.sh
 ```
 
+### Combined report tables and plots
+
+Once the raw `.txt` timing files exist, `make_n_vs_time_table.py` combines them into report-ready output, written into `results/n_vs_time/summary/` (kept separate from the raw per-script files):
+
+```
+python make_n_vs_time_table.py
+```
+
+This produces:
+- `n_vs_time_table.tex` / `n_vs_time_table.txt` -- a combined table (all primitives, one row per N)
+- `n_vs_time_combined.png` / `n_vs_time_combined_loglog.png` -- every primitive's timing curve overlaid on one plot, linear and log-log scale
+- For each primitive with both a plain and boxed variant (Wendland, Gaussian, Triangle Soup): an individual boxed-vs-plain comparison plot (`n_vs_time_<name>_boxed_vs_plain.png`, plus a log-log version) and a per-N speedup table in `n_vs_time_speedup_table.tex`
+
+`run_all_n_vs_time.sh` calls this automatically at the end of a full sweep. `make_n_vs_time_table.py` also accepts `--metric` (`forward_ms`, `backward_ms`, or `total_ms`, default `total_ms`) and `--outdir` to change where the summary is written.
+
 ## Building in debug mode
 
 ```
