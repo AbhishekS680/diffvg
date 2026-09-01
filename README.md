@@ -1,6 +1,6 @@
 # diffvg (fork) — Comparative Analysis of Geometric Primitives for Differentiable Image Reconstruction
 
-![kernel comparison](docs/imgs/kernel_comparison.png)
+![primitive comparison](docs/imgs/primitive_comparison.png)
 
 This is a fork of [diffvg](https://people.csail.mit.edu/tzumao/diffvg/), a differentiable rasterizer for 2D vector graphics. This fork extends diffvg with several additional kernel-based primitives and investigates which geometric representation offers the best trade-off between reconstruction fidelity, geometric complexity, and convergence speed, for the task of reconstructing raster (pixel) images.
 
