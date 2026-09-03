@@ -181,7 +181,7 @@ print('saved error_heatmap.png')
 # pixels that were already reconstructed well get weight close to 1
 # and are mostly left alone.
 # -------------------------------------------------------------------
-weight_np = FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
+weight_np = 1.0 + FOCUS_WEIGHT_SCALE * (error_map / (error_map.max() + 1e-8))
 weight_map = torch.from_numpy(weight_np).to(torch.float32).unsqueeze(-1)  # (H, W, 1), broadcasts over RGB
 
 fig, ax = plt.subplots(figsize=(8, 6))

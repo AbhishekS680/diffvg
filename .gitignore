@@ -17,3 +17,4 @@ compare_kernels.py
 plot_comparison.py
 compare_error_heatmaps.py
 compare_error_heatmaps_multi.py
+make_n_vs_time_table.py
