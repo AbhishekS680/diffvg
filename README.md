@@ -29,6 +29,12 @@ N. Comparison scripts (`comparison_*.py`) reconstruct a target image starting fr
 
 ### Example output
 
+![ellipse diffvg reconstruction](docs/imgs/ellipse_diffvg_all_comparison.png)
+
+The **diffvg Ellipse baseline** (`master` branch, standard hard-edged diffvg, no smooth falloff) is shown here for comparison against the four primitives below. With a limited primitive budget, its reconstruction is visibly blocky: sharp, unblended boundaries between neighbouring ellipses and conspicuous gaps in regions the ellipse budget didn't happen to cover. This is the motivation for the smooth-kernel and flat-shaded primitives that follow.
+
+---
+
 ![wendland reconstruction](docs/imgs/wendland_all_comparison.png)
 
 The **Wendland reconstruction** uses a compact-support polynomial kernel. Each control point influences only nearby pixels, producing a localized and smoothly blended reconstruction.
