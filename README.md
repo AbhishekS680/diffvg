@@ -10,6 +10,8 @@ This project was completed as part of an NSERC USRA at Carleton University's Gra
 
 The original diffvg supports circles, ellipses, rectangles, polygons, curves, and paths, optimized against a target image via gradient descent through a differentiable rasterizer.
 
+For a fair point of comparison, `ellipse_diffvg.py` (on `master`) fits diffvg's own standard, hard-edged Ellipse primitive to a target image using the same N/iterations convention as the new kernels below — useful for directly seeing what smooth falloff buys you over diffvg's original hard-edged primitives.
+
 This fork adds five additional primitive types, each implemented as its own C++ kernel added onto the diffvg pipeline, and compares them against each other on image reconstruction tasks:
 
 - **Splatting kernels** — three variants, each a smooth radial falloff around a control point:
@@ -74,8 +76,17 @@ Before installing, make sure you have the following set up on your system:
 
 ## Install
 
+Clone the repository, then initialize submodules from the repository root:
+
 ```
+git clone https://github.com/AbhishekS680/diffvg.git
+cd diffvg
 git submodule update --init --recursive
+```
+
+The Python environment is then set up with Conda. **On Windows, all Conda commands must be run from an Anaconda Prompt** rather than a standard Command Prompt or PowerShell window, since Conda's environment activation does not work correctly outside it:
+
+```
 conda create -n diffvg python=3.10
 conda activate diffvg
 conda install -y pytorch torchvision -c pytorch
@@ -92,16 +103,24 @@ pip install lpips
 python setup.py install
 ```
 
+**On Windows**, the build may additionally require explicitly setting a CMake generator matching your installed Visual Studio version, before running `python setup.py install`:
+
+```
+set CMAKE_GENERATOR=Visual Studio 18 2026
+```
+
+(the exact generator string depends on your Visual Studio version; adjust accordingly, or omit this step if the default generator works). Build from the x64 Native Tools Command Prompt with the conda environment activated.
+
 You can check if diffvg is installed correctly by running `python -c "import pydiffvg"` in the conda environment. If there are no errors, the installation was successful.
 
-**Rebuilding after switching branches:**
+**If a build fails for any reason**, delete the `build` directory before retrying. A stale `build` folder left over from a previous, differently configured attempt is a common source of otherwise confusing build errors:
+
 ```
 rm -rf build
 python setup.py install
 ```
 
-**Windows:** build from the x64 Native Tools Command Prompt with the conda environment
-activated.
+This same clean rebuild step is also required after switching branches, since each branch's C++ extension must be rebuilt from scratch.
 
 ## Running a single primitive
 
@@ -109,41 +128,41 @@ activated.
 cd apps
 ```
 
-Each primitive has a standalone rendering script that fits N control points/shapes directly to a target image. All accept `--n`, `--iters`, and `--image` to override the defaults (N=1000, 200 iterations, `imgs/fruit_basket.png`) without editing the script:
+Each primitive has a standalone rendering script that fits N control points/shapes directly to a target image. All accept `--n`, `--iters`, `--image`, and `--seed` to override the defaults (N=1000, 200 iterations, `imgs/fruit_basket.png`, seed=0) without editing the script:
 
 ```
-python wendland_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png
-python gaussian_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png
-python shepard_rendering.py --n 500 --iters 100 --image imgs/cat.png
-python trianglesoup_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png
+python wendland_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python gaussian_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python shepard_rendering.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python trianglesoup_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
 ```
 
 `shepard_segmented.py` additionally takes `--seg-size` (Mean Shift bandwidth — smaller means more, finer segments):
 
 ```
-python shepard_segmented.py --n 100 --iters 100 --image imgs/cat.png --seg-size 0.2
+python shepard_segmented.py --n 100 --iters 100 --image imgs/cat.png --seg-size 0.2 --seed 0
 ```
 
 Each writes its outputs (final render, loss curve, error heatmap, timing, and several diagnostic visualizations) to `results/<script_name>/`. The boxed rendering scripts also run an optional **focus phase** after the main loop: a second round of iterations that reweights the loss toward pixels with the worst error from pass one, and reports whether that actually reduced error (`focus_summary.txt`) — this doesn't always help, and is itself a reportable per-primitive result.
 
 ### Running every primitive at once
 
-`run_all_rendering.sh` runs all primitive scripts sequentially, switching branches automatically. `N`, `ITERS`, `IMAGE`, and `SEG_SIZE` are configurable via environment variables instead of editing the script:
+`run_all_rendering.sh` runs all primitive scripts sequentially, switching branches automatically. `N`, `ITERS`, `IMAGE`, `SEG_SIZE`, and `SEED` are configurable via environment variables instead of editing the script:
 
 ```
 chmod +x run_all_rendering.sh
-N=500 ITERS=100 IMAGE=imgs/cat.png ./run_all_rendering.sh
+N=500 ITERS=100 IMAGE=imgs/cat.png SEED=0 ./run_all_rendering.sh
 ```
 
 ## Running a comparison (degraded → sharp reconstruction)
 
-The comparison scripts take a target (sharp) image and a degraded (blurred) image, and optimize the primitive's parameters to reconstruct the sharp image starting from the degraded one as the base canvas. They also accept `--n`/`--iters`:
+The comparison scripts take a target (sharp) image and a degraded (blurred) image, and optimize the primitive's parameters to reconstruct the sharp image starting from the degraded one as the base canvas. They also accept `--n`/`--iters`/`--seed`:
 
 ```
-python comparison_wendland_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_wendland_boxed --n 1000 --iters 200
-python comparison_gaussian_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_gaussian_boxed --n 1000 --iters 200
-python comparison_shepard.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_shepard --n 1000 --iters 200
-python comparison_trianglesoup_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_trianglesoup_boxed --n 1000 --iters 200
+python comparison_wendland_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_wendland_boxed --n 1000 --iters 200 --seed 0
+python comparison_gaussian_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_gaussian_boxed --n 1000 --iters 200 --seed 0
+python comparison_shepard.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_shepard --n 1000 --iters 200 --seed 0
+python comparison_trianglesoup_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_trianglesoup_boxed --n 1000 --iters 200 --seed 0
 ```
 
 Each comparison run outputs, among other things:
@@ -154,14 +173,18 @@ Each comparison run outputs, among other things:
 ### Running the full sweep
 
 `run_all_comparisons.sh` runs all four primitives across a chain of degradation levels, checking out each branch automatically, scoring each hop's reconstruction against the sharp target as it goes, and running the full `score_results.py` summary at the end.
-`N`, `ITERS`, and `IMAGE_SET` are configurable via environment variables — `IMAGE_SET` must match a folder under `imgs/` containing `level_0.png`..`level_4.png`, and results are written under `results/<IMAGE_SET>/...` to match:
+`N`, `ITERS`, `IMAGE_SET`, and `SEED` are configurable via environment variables — `IMAGE_SET` must match a folder under `imgs/` containing `level_0.png`..`level_4.png`, and results are written under `results/<IMAGE_SET>/...` to match:
 
 ```
 chmod +x run_all_comparisons.sh
-N=500 ITERS=100 IMAGE_SET=Cat ./run_all_comparisons.sh
+N=500 ITERS=100 IMAGE_SET=Cat SEED=0 ./run_all_comparisons.sh
 ```
 
-You should set your PC to not sleep during this process (`caffeinate -i ./run_all_comparisons.sh` on macOS), as it can take several hours to complete all comparisons.
+You should set your PC to not sleep during this process, as it can take several hours to complete all comparisons. On macOS, since environment variable assignments placed directly before `caffeinate` only apply to `caffeinate` itself (not the script it launches), use `caffeinate -i env` to pass them through correctly:
+
+```
+caffeinate -i env N=500 ITERS=100 IMAGE_SET=Cat SEED=0 ./run_all_comparisons.sh
+```
 
 `score_results.py` also accepts `--image-set` if you want to (re-)score a specific set manually:
 ```
@@ -174,23 +197,23 @@ which reports SSIM/LPIPS pass/fail per primitive per hop, using thresholds `SSIM
 Each primitive has an `n_vs_time_*.py` script that measures forward/backward render time across a sweep of N values, for comparing how each primitive's cost scales:
 
 ```
-python n_vs_time_wendland.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_wendland_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_gaussian.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_gaussian_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_shepard.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_trianglesoup.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
-python n_vs_time_trianglesoup_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5
+python n_vs_time_wendland.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_wendland_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_gaussian.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_gaussian_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_shepard.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_trianglesoup.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_trianglesoup_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
 ```
 
 `--n-values` is a comma-separated list (default `50,100,250,500,750,1000,1500,2000,3000,4000,5000`). `--sleep` controls the cooldown (seconds) between each N value, to avoid thermal throttling skewing later measurements. Each script writes a `.txt` timing table and a
 `.png` plot to `results/n_vs_time/`.
 
-Run every primitive's sweep at once with `run_all_n_vs_time.sh`, which accepts `IMAGE`, `N_VALUES`, and `SLEEP` as environment variables:
+Run every primitive's sweep at once with `run_all_n_vs_time.sh`, which accepts `IMAGE`, `N_VALUES`, `SLEEP`, and `SEED` as environment variables:
 
 ```
 chmod +x run_all_n_vs_time.sh
-N_VALUES=100,500,1000 SLEEP=5 IMAGE=imgs/cat.png ./run_all_n_vs_time.sh
+N_VALUES=100,500,1000 SLEEP=5 IMAGE=imgs/cat.png SEED=0 ./run_all_n_vs_time.sh
 ```
 
 ### Combined report tables and plots
