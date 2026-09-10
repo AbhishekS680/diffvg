@@ -1649,7 +1649,9 @@ void render(std::shared_ptr<Scene> scene,
 #endif
 }
 
-// Timing accumulators for render_shepard (forward/backward)
+// Timing accumulators for render_shepard (forward/backward passes).
+// Exposed to Python via get_shepard_timing() for profiling comparisons
+// across primitive types.
 static double g_shepard_forward_time_ms = 0.0;
 static double g_shepard_backward_time_ms = 0.0;
 static long long g_shepard_forward_pixel_calls = 0;
@@ -1661,6 +1663,7 @@ void reset_shepard_timing() {
     g_shepard_forward_pixel_calls = 0;
     g_shepard_backward_pixel_calls = 0;
 }
+
 void print_shepard_timing() {
     printf("---- render_shepard timing ----\n");
     printf("Forward:  %.3f ms total, %lld pixel-calls, %.6f ms/pixel\n",
@@ -1670,30 +1673,32 @@ void print_shepard_timing() {
            g_shepard_backward_time_ms, g_shepard_backward_pixel_calls,
            g_shepard_backward_pixel_calls > 0 ? g_shepard_backward_time_ms / g_shepard_backward_pixel_calls : 0.0);
 }
+
 py::tuple get_shepard_timing() {
     return py::make_tuple(g_shepard_forward_time_ms, g_shepard_forward_pixel_calls,
                            g_shepard_backward_time_ms, g_shepard_backward_pixel_calls);
 }
 
-// Shepard field renderer
-// Forward pass: for each pixel, compute IDW-weighted color sum across N control points
-// Backward pass: accumulate gradients w.r.t. positions and colours
-
+// Shepard IDW splatting renderer.
+// Forward: for each pixel, blend all N control points' colours weighted by
+// inverse distance (1 / dist^q), closer points contribute more.
+// Backward: given d_render_image (loss gradient w.r.t. output pixels),
+// accumulate gradients into d_colours and d_positions.
 void render_shepard(const ShepardField &field,
-                    ptr<float> render_image,
-                    ptr<float> d_render_image,
-                    ptr<float> d_positions,
-                    ptr<float> d_colours,
-                    int width,
-                    int height) {
-        const int N = field.num_points;
-        const float q = field.q;
+                     ptr<float> render_image,
+                     ptr<float> d_render_image,
+                     ptr<float> d_positions,
+                     ptr<float> d_colours,
+                     int width,
+                     int height) {
+    const int N = field.num_points;
+    const float q = field.q;
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            float total_weight = 0.0;
-            float r = 0.0, g = 0.0, b = 0.0;
-            bool hit = false; // Becomes true when a pixel lands directly on a control point, no gradient needed
+            float total_weight = 0.0f;
+            float r = 0.0f, g = 0.0f, b = 0.0f;
+            bool hit = false; // true if the pixel lands exactly on a control point (no gradient needed)
             auto fwd_start = std::chrono::high_resolution_clock::now();
 
             for (int i = 0; i < N; i++) {
@@ -1701,26 +1706,25 @@ void render_shepard(const ShepardField &field,
                 float py = field.positions[i * 2 + 1];
                 float dist_x = x - px;
                 float dist_y = y - py;
-                float dist = sqrt(dist_x*dist_x + dist_y*dist_y); // Using the pythagorean theorem to find the distance b/w the pixel and the point
+                float dist = sqrt(dist_x * dist_x + dist_y * dist_y);
 
-                if (dist < 1e-6) { // Cannot be zero
+                if (dist < 1e-6f) {
+                    // Exact hit: take the point's colour directly, skip weighting
                     r = field.colours[i * 3 + 0];
                     g = field.colours[i * 3 + 1];
                     b = field.colours[i * 3 + 2];
-                    total_weight = -1.0;
                     hit = true;
                     break;
                 }
 
-                float weight = 1.0 / pow(dist, q);
+                float weight = 1.0f / pow(dist, q);
                 r += weight * field.colours[i * 3 + 0];
                 g += weight * field.colours[i * 3 + 1];
                 b += weight * field.colours[i * 3 + 2];
                 total_weight += weight;
             }
 
-            // Normalize the values
-            if (total_weight > 0.0) {
+            if (total_weight > 0.0f) {
                 r /= total_weight;
                 g /= total_weight;
                 b /= total_weight;
@@ -1730,38 +1734,35 @@ void render_shepard(const ShepardField &field,
             g_shepard_forward_time_ms += std::chrono::duration<double, std::milli>(fwd_end - fwd_start).count();
             g_shepard_forward_pixel_calls++;
 
-            int index = (y * width + x) * 3; // Find the index of the pixel in the array using the formula
+            int index = (y * width + x) * 3;
 
             if (render_image.get() != nullptr) {
                 render_image.get()[index + 0] = r;
                 render_image.get()[index + 1] = g;
                 render_image.get()[index + 2] = b;
             }
-            
-            // Backward pass (How wrong is the image and why)
-            // Reads the image by the forward pass
-            if (d_render_image.get() != nullptr && !hit && total_weight > 0.0) {
+
+            // Backward pass: distribute the incoming pixel gradient back to
+            // each control point's colour and position.
+            if (d_render_image.get() != nullptr && !hit && total_weight > 0.0f) {
                 auto bwd_start = std::chrono::high_resolution_clock::now();
 
-                float grad_r = d_render_image.get()[index + 0]; // Reads the incoming gradient; computed by PyTorch before calling render_shepard backward
+                float grad_r = d_render_image.get()[index + 0]; // gradient computed by PyTorch's autograd
                 float grad_g = d_render_image.get()[index + 1];
                 float grad_b = d_render_image.get()[index + 2];
 
                 for (int i = 0; i < N; i++) {
-                    // Recomputing the distance to the control point i
                     float px = field.positions[i * 2 + 0];
                     float py = field.positions[i * 2 + 1];
                     float dx = x - px;
                     float dy = y - py;
-                    float dist = sqrt(dx*dx + dy*dy);
-                    if (dist < 1e-6f) continue; // Cannot divide by 0
+                    float dist = sqrt(dx * dx + dy * dy);
+                    if (dist < 1e-6f) continue;
 
-                    // Recomputing weight
                     float dist_q = pow(dist, q);
-                    float w = 1.0 / dist_q;
+                    float w = 1.0f / dist_q;
 
-                    // How much the loss changes if a control point's colour changes
-                    // grad: how wrong each RGB was
+                    // d(loss)/d(colour_i) = grad * weight_i / total_weight
                     if (d_colours.get() != nullptr) {
                         d_colours.get()[i * 3 + 0] += grad_r * w / total_weight;
                         d_colours.get()[i * 3 + 1] += grad_g * w / total_weight;
@@ -1769,17 +1770,14 @@ void render_shepard(const ShepardField &field,
                     }
 
                     if (d_positions.get() != nullptr) {
-                        // Loss change if weight changes
+                        // Chain rule: d(loss)/d(weight_i) -> d(weight_i)/d(dist) -> d(dist)/d(position_i)
                         float dL_dw = (grad_r * (field.colours[i*3+0] - r) +
-                                        grad_g * (field.colours[i*3+1] - g) +
-                                        grad_b * (field.colours[i*3+2] - b)) / total_weight;
-                        // Weight change if distance changes
+                                       grad_g * (field.colours[i*3+1] - g) +
+                                       grad_b * (field.colours[i*3+2] - b)) / total_weight;
                         float dw_ddist = -q * pow(dist, q - 1.f) / (dist_q * dist_q);
-                        // Loss change if distance changes
                         float dL_ddist = dL_dw * dw_ddist;
-                        d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist); // Spltting the result into x and y components
+                        d_positions.get()[i * 2 + 0] += dL_ddist * (-dx / dist);
                         d_positions.get()[i * 2 + 1] += dL_ddist * (-dy / dist);
-                        
                     }
                 }
                 auto bwd_end = std::chrono::high_resolution_clock::now();

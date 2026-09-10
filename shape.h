@@ -13,7 +13,8 @@ enum class ShapeType {
     Rect
 };
 
-// ShapeType not needed for Shepard
+// Shepard IDW splatting field. Rendered directly from its point cloud rather
+// than through Shape/ShapeType. It doesn't use ShapeType at all.
 struct ShepardField {
     ShepardField(ptr<float> positions,
                  ptr<float> colours,
@@ -27,7 +28,7 @@ struct ShepardField {
     float *positions;
     float *colours;
     int num_points;
-    float q;
+    float q;  // IDW power exponent: higher q -> sharper falloff, closer points dominate more
 
     ptr<void> get_ptr() {
         return ptr<void>(this);
@@ -99,7 +100,7 @@ struct Shape {
     Shape() {}
     Shape(const ShapeType &type,
           ptr<void> shape_ptr,
-          float stroke_width)    
+          float stroke_width)
         : type(type), ptr(shape_ptr.get()), stroke_width(stroke_width) {}
 
     Circle as_circle() const {

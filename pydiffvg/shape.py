@@ -3,10 +3,14 @@ import svgpathtools
 import math
 
 class ShepardField:
+    """Shepard IDW splatting field: a point cloud of positions/colours,
+    blended per-pixel by inverse distance weighting (see render_shepard).
+    q is the IDW power exponent (higher q -> sharper falloff)."""
     def __init__(self, positions, colours, q = 3.0):
         self.positions = positions
         self.colours = colours
         self.q = q
+
 class Circle:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

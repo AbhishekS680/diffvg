@@ -868,13 +868,16 @@ class RenderFunction(torch.autograd.Function):
         return tuple(d_args)
 
 class ShepardRenderFunction(torch.autograd.Function):
-    # Gives the current positions and colours and renders the image by calling the C++ render_shepard foward loop
-    # Uses raw memory pointers
+    """
+        PyTorch autograd wrapper around the C++ render_shepard IDW splatting renderer.
+        Takes positions/colours directly and passes raw memory pointers to the C++ side.
+    """
+
     @staticmethod
     def forward(ctx, positions, colours, q, width, height):
         positions_cpu = positions.contiguous().cpu()
-        colours_cpu   = colours.contiguous().cpu()
-        render_image  = torch.zeros(height, width, 3)
+        colours_cpu = colours.contiguous().cpu()
+        render_image = torch.zeros(height, width, 3)
 
         field = diffvg.ShepardField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
@@ -890,19 +893,19 @@ class ShepardRenderFunction(torch.autograd.Function):
             width, height)
 
         ctx.save_for_backward(positions_cpu, colours_cpu)
-        ctx.q      = q
-        ctx.width  = width
+        ctx.q = q
+        ctx.width = width
         ctx.height = height
         return render_image
 
-    # Is called automatically by PyTorch with loss.backward()
     @staticmethod
     def backward(ctx, grad_img):
+        # Called automatically by PyTorch during loss.backward()
         positions_cpu, colours_cpu = ctx.saved_tensors
         grad_img_cpu = grad_img.contiguous().cpu()
 
         d_positions = torch.zeros_like(positions_cpu)
-        d_colours   = torch.zeros_like(colours_cpu)
+        d_colours = torch.zeros_like(colours_cpu)
 
         field = diffvg.ShepardField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
