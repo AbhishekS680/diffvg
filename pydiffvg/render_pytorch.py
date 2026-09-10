@@ -866,18 +866,24 @@ class RenderFunction(torch.autograd.Function):
         d_args.append(torch.tensor(scene.get_d_filter_radius()))
 
         return tuple(d_args)
+
 class EllipseWendlandRenderFunction(torch.autograd.Function):
-    # a, b are ACTUAL semi-axis lengths (post-exp), not log — apply exp() before calling .apply()
-    # background_image: HxWx3 float tensor in [0,1], or None for the old black-canvas behavior.
+    """
+        Wendland C2 anisotropic ellipse splatting renderer.
+        a, b are actual semi-axis lengths (post-exp), not log (apply exp()
+        before calling .apply()). background_image is an HxWx3 float tensor
+        in [0,1], or None to composite onto a black canvas.
+    """
     @staticmethod
     def forward(ctx, positions, colours, a, b, theta, background_image, width, height):
         positions_cpu = positions.contiguous().cpu()
-        colours_cpu   = colours.contiguous().cpu()
-        a_cpu         = a.contiguous().cpu()
-        b_cpu         = b.contiguous().cpu()
-        theta_cpu     = theta.contiguous().cpu()
+        colours_cpu = colours.contiguous().cpu()
+        a_cpu = a.contiguous().cpu()
+        b_cpu = b.contiguous().cpu()
+        theta_cpu = theta.contiguous().cpu()
         background_cpu = background_image.contiguous().cpu() if background_image is not None else None
-        render_image  = torch.zeros(height, width, 3)
+        render_image = torch.zeros(height, width, 3)
+
         field = diffvg.EllipseWendlandField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
             diffvg.float_ptr(colours_cpu.data_ptr()),
@@ -885,19 +891,21 @@ class EllipseWendlandRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(b_cpu.data_ptr()),
             diffvg.float_ptr(theta_cpu.data_ptr()),
             positions_cpu.shape[0])
+
         diffvg.render_ellipse_wendland(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
             diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # d_render_image, not needed on forward
+            diffvg.float_ptr(0),  # d_positions
+            diffvg.float_ptr(0),  # d_colours
+            diffvg.float_ptr(0),  # d_a
+            diffvg.float_ptr(0),  # d_b
+            diffvg.float_ptr(0),  # d_theta
             width, height)
+
         ctx.save_for_backward(positions_cpu, colours_cpu, a_cpu, b_cpu, theta_cpu)
         ctx.background_cpu = background_cpu  # fixed input, doesn't require grad -- not saved via save_for_backward
-        ctx.width  = width
+        ctx.width = width
         ctx.height = height
         return render_image
 
@@ -906,11 +914,13 @@ class EllipseWendlandRenderFunction(torch.autograd.Function):
         positions_cpu, colours_cpu, a_cpu, b_cpu, theta_cpu = ctx.saved_tensors
         background_cpu = ctx.background_cpu
         grad_img_cpu = grad_img.contiguous().cpu()
+
         d_positions = torch.zeros_like(positions_cpu)
-        d_colours   = torch.zeros_like(colours_cpu)
-        d_a         = torch.zeros_like(a_cpu)
-        d_b         = torch.zeros_like(b_cpu)
-        d_theta     = torch.zeros_like(theta_cpu)
+        d_colours = torch.zeros_like(colours_cpu)
+        d_a = torch.zeros_like(a_cpu)
+        d_b = torch.zeros_like(b_cpu)
+        d_theta = torch.zeros_like(theta_cpu)
+
         field = diffvg.EllipseWendlandField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
             diffvg.float_ptr(colours_cpu.data_ptr()),
@@ -918,9 +928,10 @@ class EllipseWendlandRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(b_cpu.data_ptr()),
             diffvg.float_ptr(theta_cpu.data_ptr()),
             positions_cpu.shape[0])
+
         diffvg.render_ellipse_wendland(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # render_image, not needed on backward
             diffvg.float_ptr(grad_img_cpu.data_ptr()),
             diffvg.float_ptr(d_positions.data_ptr()),
             diffvg.float_ptr(d_colours.data_ptr()),
@@ -928,21 +939,26 @@ class EllipseWendlandRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(d_b.data_ptr()),
             diffvg.float_ptr(d_theta.data_ptr()),
             ctx.width, ctx.height)
+
         return d_positions, d_colours, d_a, d_b, d_theta, None, None, None
 
 class EllipseWendlandBoxedRenderFunction(torch.autograd.Function):
-    # Same as EllipseWendlandRenderFunction, but uses the tile-grid
-    # accelerated C++ renderer. Kept as a separate class so the original
-    # stays untouched and validated.
+    """
+        Boxed (tile-accelerated) variant of EllipseWendlandRenderFunction.
+        Same Wendland kernel and argument conventions (see that class for
+        details). Kept as a separate class so the unaccelerated version stays
+        untouched and independently validated.
+    """
     @staticmethod
     def forward(ctx, positions, colours, a, b, theta, background_image, width, height):
         positions_cpu = positions.contiguous().cpu()
-        colours_cpu   = colours.contiguous().cpu()
-        a_cpu         = a.contiguous().cpu()
-        b_cpu         = b.contiguous().cpu()
-        theta_cpu     = theta.contiguous().cpu()
+        colours_cpu = colours.contiguous().cpu()
+        a_cpu = a.contiguous().cpu()
+        b_cpu = b.contiguous().cpu()
+        theta_cpu = theta.contiguous().cpu()
         background_cpu = background_image.contiguous().cpu() if background_image is not None else None
-        render_image  = torch.zeros(height, width, 3)
+        render_image = torch.zeros(height, width, 3)
+
         field = diffvg.EllipseWendlandField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
             diffvg.float_ptr(colours_cpu.data_ptr()),
@@ -950,19 +966,21 @@ class EllipseWendlandBoxedRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(b_cpu.data_ptr()),
             diffvg.float_ptr(theta_cpu.data_ptr()),
             positions_cpu.shape[0])
+
         diffvg.render_ellipse_wendland_boxed(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
             diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # d_render_image, not needed on forward
+            diffvg.float_ptr(0),  # d_positions
+            diffvg.float_ptr(0),  # d_colours
+            diffvg.float_ptr(0),  # d_a
+            diffvg.float_ptr(0),  # d_b
+            diffvg.float_ptr(0),  # d_theta
             width, height)
+
         ctx.save_for_backward(positions_cpu, colours_cpu, a_cpu, b_cpu, theta_cpu)
         ctx.background_cpu = background_cpu
-        ctx.width  = width
+        ctx.width = width
         ctx.height = height
         return render_image
 
@@ -971,11 +989,13 @@ class EllipseWendlandBoxedRenderFunction(torch.autograd.Function):
         positions_cpu, colours_cpu, a_cpu, b_cpu, theta_cpu = ctx.saved_tensors
         background_cpu = ctx.background_cpu
         grad_img_cpu = grad_img.contiguous().cpu()
+
         d_positions = torch.zeros_like(positions_cpu)
-        d_colours   = torch.zeros_like(colours_cpu)
-        d_a         = torch.zeros_like(a_cpu)
-        d_b         = torch.zeros_like(b_cpu)
-        d_theta     = torch.zeros_like(theta_cpu)
+        d_colours = torch.zeros_like(colours_cpu)
+        d_a = torch.zeros_like(a_cpu)
+        d_b = torch.zeros_like(b_cpu)
+        d_theta = torch.zeros_like(theta_cpu)
+
         field = diffvg.EllipseWendlandField(
             diffvg.float_ptr(positions_cpu.data_ptr()),
             diffvg.float_ptr(colours_cpu.data_ptr()),
@@ -983,9 +1003,10 @@ class EllipseWendlandBoxedRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(b_cpu.data_ptr()),
             diffvg.float_ptr(theta_cpu.data_ptr()),
             positions_cpu.shape[0])
+
         diffvg.render_ellipse_wendland_boxed(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # render_image, not needed on backward
             diffvg.float_ptr(grad_img_cpu.data_ptr()),
             diffvg.float_ptr(d_positions.data_ptr()),
             diffvg.float_ptr(d_colours.data_ptr()),
@@ -993,6 +1014,7 @@ class EllipseWendlandBoxedRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(d_b.data_ptr()),
             diffvg.float_ptr(d_theta.data_ptr()),
             ctx.width, ctx.height)
+
         return d_positions, d_colours, d_a, d_b, d_theta, None, None, None
 
 class EllipsePolyRenderFunction(torch.autograd.Function):

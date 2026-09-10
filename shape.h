@@ -13,6 +13,11 @@ enum class ShapeType {
     Rect
 };
 
+// Wendland C2 splatting field: anisotropic ellipse primitives with a compact-
+// support polynomial falloff, (1-t)^4(4t+1) for normalized radial distance
+// t <= 1, zero beyond. a/b are the ellipse's semi-axes and theta its rotation,
+// and together they define the per-primitive normalized distance the falloff
+// is evaluated against (see render_wendland).
 struct EllipseWendlandField {
     EllipseWendlandField(ptr<float> positions,
                           ptr<float> colours,
@@ -29,9 +34,9 @@ struct EllipseWendlandField {
 
     float *positions;
     float *colours;
-    float *a;
-    float *b;
-    float *theta;
+    float *a;      // semi-axis length along the ellipse's local x-axis
+    float *b;      // semi-axis length along the ellipse's local y-axis
+    float *theta;  // rotation angle (radians) of the ellipse's local frame
     int num_points;
 
     ptr<void> get_ptr() {
@@ -104,7 +109,7 @@ struct Shape {
     Shape() {}
     Shape(const ShapeType &type,
           ptr<void> shape_ptr,
-          float stroke_width)    
+          float stroke_width)
         : type(type), ptr(shape_ptr.get()), stroke_width(stroke_width) {}
 
     Circle as_circle() const {

@@ -1674,10 +1674,18 @@ void print_ellipse_wendland_timing() {
 }
 
 py::tuple get_ellipse_wendland_timing() {
-        return py::make_tuple(g_ellipse_forward_time_ms, g_ellipse_forward_pixel_calls,
-                            g_ellipse_backward_time_ms, g_ellipse_backward_pixel_calls);
-    }
+    return py::make_tuple(g_ellipse_forward_time_ms, g_ellipse_forward_pixel_calls,
+                           g_ellipse_backward_time_ms, g_ellipse_backward_pixel_calls);
+}
 
+// Wendland C2 anisotropic ellipse splatting renderer.
+// Forward: for each pixel, composite all N ellipses back-to-front (index
+// order) using standard alpha-over, where ellipse i's alpha is the Wendland
+// kernel (1-t)^4(4t+1) evaluated at its normalized radial distance t (see
+// shape.h for the definition of t). t >= 1 means zero contribution.
+// Backward: given d_render_image, walks the composite front-to-back using
+// cached per-pixel accumulator history (avoids an O(N^2) recompute) and
+// accumulates gradients into position, colour, a, b, and theta.
 void render_ellipse_wendland(const EllipseWendlandField &field,
                              ptr<float> background_image,
                              ptr<float> render_image,
@@ -1689,13 +1697,14 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                              ptr<float> d_theta,
                              int width,
                              int height) {
-    const int N = field.num_points; // Number of ellipses
+    const int N = field.num_points;
 
-    // Reused per-pixel storage: history of the accumulator's state after each ellipse
+    // Per-pixel storage: the compositing accumulator's state right after
+    // each ellipse is applied, so the backward pass can look up "state
+    // before ellipse i" instead of recomputing it via a second forward loop.
     std::vector<float> hist_r(N), hist_g(N), hist_b(N), hist_alpha(N);
     std::vector<float> hist_t(N), hist_alpha_i(N);
 
-    // Looking at each pixel one by one
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             float accum_r = 0.0f, accum_g = 0.0f, accum_b = 0.0f, accum_alpha = 0.0f;
@@ -1709,49 +1718,40 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
 
             auto fwd_start = std::chrono::high_resolution_clock::now();
 
-            for (int i = 0; i < N; i++) { // Loop over every ellipse
-                float px = field.positions[i * 2 + 0]; // center x 
-                float py = field.positions[i * 2 + 1]; // center y
-                // Ellipse's two semi-axis lengths
+            for (int i = 0; i < N; i++) {
+                float px = field.positions[i * 2 + 0];
+                float py = field.positions[i * 2 + 1];
                 float ai = field.a[i];
                 float bi = field.b[i];
-                float th = field.theta[i]; // Rotation angle
-                // How far away a pixel is from the ellipse center
+                float th = field.theta[i];
                 float dx = x - px;
                 float dy = y - py;
-                // Un-rotate the pixel's offset so the ellipse looks axis-aligned
+                // Un-rotate the pixel's offset, then un-stretch by the
+                // semi-axes, so the ellipse looks like a unit circle
                 float cosT = cos(th);
                 float sinT = sin(th);
                 float dxp =  cosT * dx + sinT * dy;
                 float dyp = -sinT * dx + cosT * dy;
-                // Un-stretch it so the ellipse looks like a perfect circle
                 float u = dxp / ai;
                 float v = dyp / bi;
+                float t = sqrt(u*u + v*v); // t <= 1 -> inside the ellipse's influence
 
-                // Pythagorean theorem
-                // t <= 1 = pixel is inside ellipse, otherwise outside
-                float t = sqrt(u*u + v*v); // Distance from pixel to ellipse center, normalized in (u, v) space
-
-                float alpha_i = 0.0f; // Ellipse's opacity at the pixel, 0 if outside its influence
+                float alpha_i = 0.0f;
                 if (t < 1.0f) {
-                    // Wendland kernel formula
                     float one_minus_t = 1.0f - t;
-                    float w = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
-                    alpha_i = w; // Reassigned for clarity
+                    alpha_i = one_minus_t*one_minus_t*one_minus_t*one_minus_t * (4.0f*t + 1.0f);
 
-                    // Ellipse's colour (red, green, blue)
                     float color_r = field.colours[i * 3 + 0];
                     float color_g = field.colours[i * 3 + 1];
                     float color_b = field.colours[i * 3 + 2];
 
-                    // Over-operator
+                    // Alpha-over compositing
                     accum_r = accum_r * (1.0f - alpha_i) + alpha_i * color_r;
                     accum_g = accum_g * (1.0f - alpha_i) + alpha_i * color_g;
                     accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
                     accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
                 }
-                // Save the accumulator's state AFTER ellipse i, and cache t/alpha_i,
-                // whether or not this ellipse contributed
+                // Cache state and t/alpha_i whether or not this ellipse contributed
                 hist_r[i] = accum_r;
                 hist_g[i] = accum_g;
                 hist_b[i] = accum_b;
@@ -1770,31 +1770,32 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                 render_image.get()[index + 1] = accum_g;
                 render_image.get()[index + 2] = accum_b;
             }
-            // ---------- Backward pass ----------
+
             if (d_render_image.get() != nullptr) {
                 auto bwd_start = std::chrono::high_resolution_clock::now();
 
                 float d_curr_r = d_render_image.get()[index + 0];
                 float d_curr_g = d_render_image.get()[index + 1];
                 float d_curr_b = d_render_image.get()[index + 2];
-                float d_curr_alpha = 0.0f; // no alpha channel in output, starts at 0
+                float d_curr_alpha = 0.0f; // no alpha channel in the output image
+
                 for (int i = N - 1; i >= 0; i--) {
-                    float t = hist_t[i]; // looked up, not recomputed
+                    float t = hist_t[i];
                     if (t >= 1.0f) continue; // zero alpha, no gradient contribution
 
-                    float alpha_i = hist_alpha_i[i]; // looked up, not recomputed
+                    float alpha_i = hist_alpha_i[i];
                     float color_r = field.colours[i * 3 + 0];
                     float color_g = field.colours[i * 3 + 1];
                     float color_b = field.colours[i * 3 + 2];
 
-                    // Accumulator state BEFORE ellipse i — looked up from history
-                    // instead of recomputed via a j-loop over ellipses 0..i-1
-                    float prev_r     = (i > 0) ? hist_r[i - 1]     : 0.0f;
-                    float prev_g     = (i > 0) ? hist_g[i - 1]     : 0.0f;
-                    float prev_b     = (i > 0) ? hist_b[i - 1]     : 0.0f;
+                    // Accumulator state before ellipse i, looked up from history
+                    // rather than recomputed via a second loop over 0..i-1
+                    float prev_r = (i > 0) ? hist_r[i - 1] : 0.0f;
+                    float prev_g = (i > 0) ? hist_g[i - 1] : 0.0f;
+                    float prev_b = (i > 0) ? hist_b[i - 1] : 0.0f;
                     float prev_alpha = (i > 0) ? hist_alpha[i - 1] : 0.0f;
 
-                    // Over-operator backward: split d_curr into d_prev, d_color_i, d_alpha_i
+                    // Alpha-over backward: split d_curr into d_prev, d_color_i, d_alpha_i
                     float d_prev_r = d_curr_r * (1.0f - alpha_i);
                     float d_prev_g = d_curr_g * (1.0f - alpha_i);
                     float d_prev_b = d_curr_b * (1.0f - alpha_i);
@@ -1806,14 +1807,15 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                                      + d_curr_r * (color_r - prev_r)
                                      + d_curr_g * (color_g - prev_g)
                                      + d_curr_b * (color_b - prev_b);
-                    // Gradient into this ellipse's color
+
                     if (d_colours.get() != nullptr) {
                         d_colours.get()[i * 3 + 0] += d_color_r;
                         d_colours.get()[i * 3 + 1] += d_color_g;
                         d_colours.get()[i * 3 + 2] += d_color_b;
                     }
 
-                    // Recompute the geometric quantities for ellipse i only
+                    // Recompute this ellipse's geometry (cheap; avoids caching
+                    // u/v/cosT/sinT per ellipse per pixel in the forward pass)
                     float px = field.positions[i * 2 + 0];
                     float py = field.positions[i * 2 + 1];
                     float ai = field.a[i];
@@ -1830,7 +1832,7 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                     float one_minus_t = 1.0f - t;
                     float one_minus_t3 = one_minus_t*one_minus_t*one_minus_t;
 
-                    // d_alpha_i feeds into the same dw/dt chain
+                    // dw/dt for (1-t)^4(4t+1): -20*t*(1-t)^3
                     float dw_dt = -20.0f * t * one_minus_t3;
                     float dL_dt = d_alpha_i * dw_dt;
                     if (t > 1e-6f) {
@@ -1853,7 +1855,6 @@ void render_ellipse_wendland(const EllipseWendlandField &field,
                             d_theta.get()[i] += dL_dt * dt_dtheta;
                         }
                     }
-                    // Move to the next (earlier) ellipse
                     d_curr_r = d_prev_r;
                     d_curr_g = d_prev_g;
                     d_curr_b = d_prev_b;
@@ -1918,7 +1919,7 @@ struct EllipseTileGrid {
             float px = field.positions[i * 2 + 0];
             float py = field.positions[i * 2 + 1];
             float ai = field.a[i]; // ellipse i's semi-axis length a
-            float bi = field.b[i]; // // ellipse i's semi-axis length b
+            float bi = field.b[i]; // ellipse i's semi-axis length b
             float th = field.theta[i]; // ellipse i rotation angle
             float cosT = cos(th);
             float sinT = sin(th);
@@ -1951,6 +1952,12 @@ struct EllipseTileGrid {
     }
 };
 
+// Boxed (tile-accelerated) variant of render_ellipse_wendland. Same Wendland
+// kernel and compositing model; see that function for the full explanation.
+// Ellipses are pre-bucketed into a tile grid (EllipseTileGrid below) so each
+// pixel only iterates its own tile's registered ellipses instead of all N.
+// Kept as a fully separate function so the unaccelerated version stays
+// untouched and independently validated.
 void render_ellipse_wendland_boxed(const EllipseWendlandField &field,
                                    ptr<float> background_image,
                                    ptr<float> render_image,

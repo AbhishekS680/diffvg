@@ -8,8 +8,12 @@ class Circle:
         self.center = center
         self.stroke_width = stroke_width
         self.id = id
-        
+
 class EllipseWendlandField:
+    """Wendland C2 splatting field: anisotropic ellipse primitives with a
+    compact-support polynomial falloff. a/b are semi-axis lengths, theta is
+    the rotation angle (radians). See shape.h / render_ellipse_wendland for
+    the falloff formula."""
     def __init__(self, positions, colours, a, b, theta):
         self.positions = positions
         self.colours = colours
