@@ -8,8 +8,8 @@ diffvg.egg-info
 dist
 __pycache__
 .DS_Store
-score_results.py
 results/
+score_results.py
 run_all_n_vs_time.sh
 run_all_rendering.sh
 run_all_comparisons.sh
