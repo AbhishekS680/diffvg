@@ -18,7 +18,6 @@ This fork adds five additional primitive types, each implemented as its own C++ 
   - **Wendland C2** — compact-support polynomial kernel, `(1-t)^4(4t+1)` (`wendland` branch)
   - **Gaussian RBF** — standard Gaussian falloff, `exp(-t^2 / 2*sigma^2)` (`gaussian` branch)
   - **Shepard IDW** — inverse-distance-weighted global interpolation, `1/dist^q` (`shepard` branch)
-- **Polynomial kernels** — per-primitive polynomial coefficient blending (see `poly` branch)
 - **Triangle soups** — independent triangles, no shared vertices/edges, each with a flat colour and a learnable opacity, composited via soft-rasterized alpha-over compositing (`trianglesoup` branch)
 
 
@@ -295,18 +294,6 @@ python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 
 ```
 python trianglesoup_rendering_boxed.py --image imgs/fallingwater.png --n 1000 --iters 200
-```
-
----
-
-### Flower — Polynomial Kernel
-
-| Target | Polynomial Kernel Reconstruction |
-| ------ | ---------------------------------- |
-| <img src="docs/imgs/flower.png" width="400"> | <img src="docs/imgs/flower_poly_kernel.png" width="400"> |
-
-```
-python polynomial_kernel_rendering.py --image imgs/flower.png --n 1000 --iters 200
 ```
 
 ---
