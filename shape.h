@@ -13,6 +13,42 @@ enum class ShapeType {
     Rect
 };
 
+// Triangle soup primitive: independent flat-shaded triangles with no shared
+// vertices/edges, composited back-to-front (index order) via standard
+// alpha-over. Unlike the ellipse kernels' smooth radial falloff, coverage
+// here comes from soft-edge signed-distance blending (controlled by
+// `softness`), and each triangle additionally has a learnable opacity cap.
+// See render_trianglesoup for the coverage/compositing formulas.
+struct TriangleSoupField {
+    TriangleSoupField(ptr<float> vertices,
+                       ptr<float> colours,
+                       ptr<float> opacity,
+                       float softness,
+                       int num_triangles) :
+        vertices(vertices.get()),
+        colours(colours.get()),
+        opacity(opacity.get()),
+        softness(softness),
+        num_triangles(num_triangles) {}
+    // Per triangle: v0x, v0y, v1x, v1y, v2x, v2y (pixel space)
+    float *vertices;
+
+    // Per triangle: r, g, b
+    float *colours;
+
+    // Per triangle: opacity in [0,1] (already sigmoid'd), caps interior solidity.
+    float *opacity;
+
+    // Edge blur width in pixels -- larger = softer edges, stronger
+    // gradients; smaller = sharper edges, weaker gradients near boundary.
+    float softness;
+    
+    int num_triangles;
+    ptr<void> get_ptr() {
+        return ptr<void>(this);
+    }
+};
+
 struct Circle {
     float radius;
     Vector2f center;
@@ -78,7 +114,7 @@ struct Shape {
     Shape() {}
     Shape(const ShapeType &type,
           ptr<void> shape_ptr,
-          float stroke_width)    
+          float stroke_width)
         : type(type), ptr(shape_ptr.get()), stroke_width(stroke_width) {}
 
     Circle as_circle() const {
@@ -100,35 +136,6 @@ struct Shape {
     ShapeType type;
     void *ptr;
     float stroke_width;
-};
-
-struct TriangleSoupField {
-    TriangleSoupField(ptr<float> vertices,
-                       ptr<float> colours,
-                       ptr<float> opacity,
-                       float softness,
-                       int num_triangles) :
-        vertices(vertices.get()),
-        colours(colours.get()),
-        opacity(opacity.get()),
-        softness(softness),
-        num_triangles(num_triangles) {}
-    // Per triangle: v0x, v0y, v1x, v1y, v2x, v2y (pixel space)
-    float *vertices;
-    // Per triangle: r, g, b (flat colour, no interpolation)
-    float *colours;
-    // Per triangle: opacity in [0,1] -- caps how solid the triangle's
-    // interior is, independent of edge softness. Passed in already
-    // squashed through sigmoid on the Python side, so this is the
-    // actual value used, not a raw logit.
-    float *opacity;
-    // Edge blur width in pixels -- larger = softer edges, stronger
-    // gradients; smaller = sharper edges, weaker gradients near boundary.
-    float softness;
-    int num_triangles;
-    ptr<void> get_ptr() {
-        return ptr<void>(this);
-    }
 };
 
 struct ShapeGroup {

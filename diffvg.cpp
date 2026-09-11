@@ -1725,7 +1725,7 @@ void render_trianglesoup(const TriangleSoupField &field,
                 float cov_neg = (1.0f - s0) * (1.0f - s1) * (1.0f - s2);
                 float coverage_i = max(cov_pos, cov_neg);
 
-                // Effective alpha caps at opacity, not 1.0 -- lets a
+                // Effective alpha caps at opacity, not 1.0, and lets a
                 // triangle stay partially see-through even at its center,
                 // so anything behind it keeps receiving gradient.
                 float opacity_i = field.opacity[i];
@@ -1885,7 +1885,6 @@ void render_trianglesoup(const TriangleSoupField &field,
         }
     }
 }
-
 
 // Timing accumulators for render_trianglesoup_boxed (forward/backward)
 static double g_trianglesoup_boxed_forward_time_ms = 0.0;

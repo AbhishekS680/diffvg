@@ -9,6 +9,19 @@ class Circle:
         self.stroke_width = stroke_width
         self.id = id
 
+class TriangleSoupField:
+    """Triangle soup primitive: independent flat-shaded triangles with no
+    shared vertices/edges, composited via soft-edge alpha-over. vertices is
+    (N, 3, 2) pixel-space coordinates, colours is (N, 3) flat RGB, opacity
+    is (N,) actual opacity in [0,1] (already sigmoid'd), softness is the
+    edge blur width in pixels. See shape.h / render_trianglesoup for the
+    coverage/compositing formulas."""
+    def __init__(self, vertices, colours, opacity, softness):
+        self.vertices = vertices
+        self.colours = colours
+        self.opacity = opacity
+        self.softness = softness
+
 class Ellipse:
     def __init__(self, radius, center, stroke_width = torch.tensor(1.0), id = ''):
         self.radius = radius

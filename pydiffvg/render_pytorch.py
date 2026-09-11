@@ -868,20 +868,24 @@ class RenderFunction(torch.autograd.Function):
         return tuple(d_args)
 
 class TriangleSoupRenderFunction(torch.autograd.Function):
-    # vertices: (N, 3, 2) pixel-space coordinates, one row per triangle
-    # colours: (N, 3) flat RGB colour per triangle
-    # opacity: (N,) ACTUAL opacity values in [0,1], already passed through
-    #   sigmoid on the caller's side (same convention as a/b being passed
-    #   as exp(log_a)/exp(log_b) already-exponentiated for the ellipse
-    #   kernels) -- so PyTorch's own autograd chains the sigmoid gradient,
-    #   this function only needs to handle d(loss)/d(opacity).
-    # softness: python float, edge blur width in pixels (not learnable)
-    # background_image: HxWx3 float tensor in [0,1], or None for black canvas
+    """
+        Triangle soup renderer: N independent flat-shaded triangles with
+        soft-edge alpha-over compositing.
+        vertices: (N, 3, 2) pixel-space coordinates, one row per triangle.
+        colours: (N, 3) flat RGB colour per triangle.
+        opacity: (N,) actual opacity values in [0,1], already passed through
+        sigmoid on the caller's side (same convention as a/b being passed
+        as exp(log_a)/exp(log_b) already-exponentiated for the ellipse
+        kernels) -- so PyTorch's own autograd chains the sigmoid gradient,
+        this function only needs to handle d(loss)/d(opacity).
+        softness: python float, edge blur width in pixels (not learnable).
+        background_image: HxWx3 float tensor in [0,1], or None for a black canvas.
+    """
     @staticmethod
     def forward(ctx, vertices, colours, opacity, softness, background_image, width, height):
         vertices_cpu = vertices.contiguous().cpu()
-        colours_cpu  = colours.contiguous().cpu()
-        opacity_cpu  = opacity.contiguous().cpu()
+        colours_cpu = colours.contiguous().cpu()
+        opacity_cpu = opacity.contiguous().cpu()
         background_cpu = background_image.contiguous().cpu() if background_image is not None else None
         render_image = torch.zeros(height, width, 3)
 
@@ -891,19 +895,20 @@ class TriangleSoupRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(opacity_cpu.data_ptr()),
             softness,
             vertices_cpu.shape[0])
+
         diffvg.render_trianglesoup(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
             diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # d_render_image, not needed on forward
+            diffvg.float_ptr(0),  # d_vertices
+            diffvg.float_ptr(0),  # d_colours
+            diffvg.float_ptr(0),  # d_opacity
             width, height)
 
         ctx.save_for_backward(vertices_cpu, colours_cpu, opacity_cpu)
         ctx.background_cpu = background_cpu
         ctx.softness = softness
-        ctx.width  = width
+        ctx.width = width
         ctx.height = height
         return render_image
 
@@ -914,8 +919,8 @@ class TriangleSoupRenderFunction(torch.autograd.Function):
         grad_img_cpu = grad_img.contiguous().cpu()
 
         d_vertices = torch.zeros_like(vertices_cpu)
-        d_colours  = torch.zeros_like(colours_cpu)
-        d_opacity  = torch.zeros_like(opacity_cpu)
+        d_colours = torch.zeros_like(colours_cpu)
+        d_opacity = torch.zeros_like(opacity_cpu)
 
         field = diffvg.TriangleSoupField(
             diffvg.float_ptr(vertices_cpu.data_ptr()),
@@ -923,9 +928,10 @@ class TriangleSoupRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(opacity_cpu.data_ptr()),
             ctx.softness,
             vertices_cpu.shape[0])
+
         diffvg.render_trianglesoup(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # render_image, not needed on backward
             diffvg.float_ptr(grad_img_cpu.data_ptr()),
             diffvg.float_ptr(d_vertices.data_ptr()),
             diffvg.float_ptr(d_colours.data_ptr()),
@@ -935,14 +941,17 @@ class TriangleSoupRenderFunction(torch.autograd.Function):
         return d_vertices, d_colours, d_opacity, None, None, None, None
 
 class TriangleSoupBoxedRenderFunction(torch.autograd.Function):
-    # Same as TriangleSoupRenderFunction, but uses the tile-grid
-    # accelerated C++ renderer. Kept as a separate class so the original
-    # stays untouched and validated.
+    """
+        Boxed (tile-accelerated) variant of TriangleSoupRenderFunction.
+        Same coverage/compositing model and argument conventions (see that
+        class for details). Kept as a separate class so the unaccelerated
+        version stays untouched and independently validated.
+    """
     @staticmethod
     def forward(ctx, vertices, colours, opacity, softness, background_image, width, height):
         vertices_cpu = vertices.contiguous().cpu()
-        colours_cpu  = colours.contiguous().cpu()
-        opacity_cpu  = opacity.contiguous().cpu()
+        colours_cpu = colours.contiguous().cpu()
+        opacity_cpu = opacity.contiguous().cpu()
         background_cpu = background_image.contiguous().cpu() if background_image is not None else None
         render_image = torch.zeros(height, width, 3)
 
@@ -952,19 +961,20 @@ class TriangleSoupBoxedRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(opacity_cpu.data_ptr()),
             softness,
             vertices_cpu.shape[0])
+
         diffvg.render_trianglesoup_boxed(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
             diffvg.float_ptr(render_image.data_ptr()),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # d_render_image, not needed on forward
+            diffvg.float_ptr(0),  # d_vertices
+            diffvg.float_ptr(0),  # d_colours
+            diffvg.float_ptr(0),  # d_opacity
             width, height)
 
         ctx.save_for_backward(vertices_cpu, colours_cpu, opacity_cpu)
         ctx.background_cpu = background_cpu
         ctx.softness = softness
-        ctx.width  = width
+        ctx.width = width
         ctx.height = height
         return render_image
 
@@ -975,8 +985,8 @@ class TriangleSoupBoxedRenderFunction(torch.autograd.Function):
         grad_img_cpu = grad_img.contiguous().cpu()
 
         d_vertices = torch.zeros_like(vertices_cpu)
-        d_colours  = torch.zeros_like(colours_cpu)
-        d_opacity  = torch.zeros_like(opacity_cpu)
+        d_colours = torch.zeros_like(colours_cpu)
+        d_opacity = torch.zeros_like(opacity_cpu)
 
         field = diffvg.TriangleSoupField(
             diffvg.float_ptr(vertices_cpu.data_ptr()),
@@ -984,9 +994,10 @@ class TriangleSoupBoxedRenderFunction(torch.autograd.Function):
             diffvg.float_ptr(opacity_cpu.data_ptr()),
             ctx.softness,
             vertices_cpu.shape[0])
+
         diffvg.render_trianglesoup_boxed(field,
             diffvg.float_ptr(background_cpu.data_ptr() if background_cpu is not None else 0),
-            diffvg.float_ptr(0),
+            diffvg.float_ptr(0),  # render_image, not needed on backward
             diffvg.float_ptr(grad_img_cpu.data_ptr()),
             diffvg.float_ptr(d_vertices.data_ptr()),
             diffvg.float_ptr(d_colours.data_ptr()),
