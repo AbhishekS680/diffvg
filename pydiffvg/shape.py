@@ -8,8 +8,12 @@ class Circle:
         self.center = center
         self.stroke_width = stroke_width
         self.id = id
-        
+
 class EllipseGaussianField:
+    """Gaussian RBF splatting field: anisotropic ellipse primitives with a
+    smooth exp(-t^2/2*sigma^2) falloff (sigma fixed in the C++ renderer).
+    a/b are semi-axis lengths, theta is the rotation angle (radians). See
+    shape.h / render_ellipse_gaussian for the falloff formula."""
     def __init__(self, positions, colours, a, b, theta):
         self.positions = positions
         self.colours = colours

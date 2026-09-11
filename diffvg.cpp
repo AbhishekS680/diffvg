@@ -1675,8 +1675,16 @@ py::tuple get_ellipse_gaussian_timing() {
                            g_ellipse_gaussian_backward_time_ms, g_ellipse_gaussian_backward_pixel_calls);
 }
 
-// Anisotropic ellipse renderer using a fixed Gaussian RBF kernel
-constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f; // How quickly opacity fades as you move away from the ellipse center
+// Anisotropic ellipse renderer using a fixed Gaussian RBF kernel.
+// Forward: for each pixel, composite all N ellipses back-to-front (index
+// order) using standard alpha-over, where ellipse i's alpha is
+// exp(-t^2 / 2*sigma^2) evaluated at its normalized radial distance t (see
+// shape.h for the definition of t). Unlike Wendland's compact support, this
+// never reaches exactly zero, but we still skip t >= 1 as a fixed cutoff.
+// Backward: mirrors render_ellipse_wendland's approach, and walks the
+// composite front-to-back using cached per-pixel accumulator history to
+// avoid an O(N^2) recompute.
+constexpr float GAUSSIAN_SIGMA = 1.0f / 3.0f; // controls how quickly opacity fades with distance from center
 
 void render_ellipse_gaussian(const EllipseGaussianField &field,
                              ptr<float> background_image,
@@ -1727,8 +1735,7 @@ void render_ellipse_gaussian(const EllipseGaussianField &field,
                 float alpha_i = 0.0f;
                 if (t < 1.0f) {
                     // Gaussian RBF kernel
-                    float w = exp(-(t*t) / (2.0f * sigma2));
-                    alpha_i = w;
+                    alpha_i = exp(-(t*t) / (2.0f * sigma2));
 
                     float color_r = field.colours[i * 3 + 0];
                     float color_g = field.colours[i * 3 + 1];
@@ -1978,9 +1985,9 @@ void render_ellipse_gaussian_boxed(const EllipseGaussianField &field,
                 float v = dyp / bi;
                 float t = sqrt(u*u + v*v);
                 float alpha_i = 0.0f;
+
                 if (t < 1.0f) {
-                    float w = exp(-(t*t) / (2.0f * sigma2));
-                    alpha_i = w;
+                    alpha_i = exp(-(t*t) / (2.0f * sigma2));
                     float color_r = field.colours[i * 3 + 0];
                     float color_g = field.colours[i * 3 + 1];
                     float color_b = field.colours[i * 3 + 2];
@@ -1989,6 +1996,7 @@ void render_ellipse_gaussian_boxed(const EllipseGaussianField &field,
                     accum_b = accum_b * (1.0f - alpha_i) + alpha_i * color_b;
                     accum_alpha = accum_alpha * (1.0f - alpha_i) + alpha_i;
                 }
+                
                 hist_r[li] = accum_r;
                 hist_g[li] = accum_g;
                 hist_b[li] = accum_b;

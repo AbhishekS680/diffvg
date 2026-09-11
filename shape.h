@@ -13,6 +13,13 @@ enum class ShapeType {
     Rect
 };
 
+// Gaussian RBF splatting field: anisotropic ellipse primitives with a smooth
+// Gaussian falloff, exp(-t^2 / 2*sigma^2), for normalized radial distance t
+// (sigma is fixed in the renderer, not stored here). a/b are the ellipse's
+// semi-axes and theta its rotation; together they define t (see shape.h's
+// EllipseWendlandField for the identical t construction, and
+// render_ellipse_gaussian for the falloff itself). Unlike Wendland's compact
+// support, this falloff never reaches exactly zero.
 struct EllipseGaussianField {
     EllipseGaussianField(ptr<float> positions,
                           ptr<float> colours,
@@ -29,9 +36,9 @@ struct EllipseGaussianField {
 
     float *positions;
     float *colours;
-    float *a;
-    float *b;
-    float *theta;
+    float *a;      // semi-axis length along the ellipse's local x-axis
+    float *b;      // semi-axis length along the ellipse's local y-axis
+    float *theta;  // rotation angle (radians) of the ellipse's local frame
     int num_points;
 
     ptr<void> get_ptr() {
@@ -104,7 +111,7 @@ struct Shape {
     Shape() {}
     Shape(const ShapeType &type,
           ptr<void> shape_ptr,
-          float stroke_width)    
+          float stroke_width)
         : type(type), ptr(shape_ptr.get()), stroke_width(stroke_width) {}
 
     Circle as_circle() const {
