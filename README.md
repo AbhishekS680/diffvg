@@ -1,145 +1,308 @@
-# diffvg
-Differentiable Rasterizer for Vector Graphics
-https://people.csail.mit.edu/tzumao/diffvg
+# diffvg (fork) — Comparative Analysis of Geometric Primitives for Differentiable Image Reconstruction
 
-diffvg is a differentiable rasterizer for 2D vector graphics. See the webpage for more info.
+![primitive comparison](docs/imgs/primitive_comparison.png)
 
-![teaser](https://user-images.githubusercontent.com/951021/92184822-2a0bc500-ee20-11ea-81a6-f26af2d120f4.jpg)
+This is a fork of [diffvg](https://people.csail.mit.edu/tzumao/diffvg/), a differentiable rasterizer for 2D vector graphics. This fork extends diffvg with several additional kernel-based primitives and investigates which geometric representation offers the best trade-off between reconstruction fidelity, geometric complexity, and convergence speed, for the task of reconstructing raster (pixel) images.
 
-![circle](https://user-images.githubusercontent.com/951021/63556018-0b2ddf80-c4f8-11e9-849c-b4ecfcb9a865.gif)
-![ellipse](https://user-images.githubusercontent.com/951021/63556021-0ec16680-c4f8-11e9-8fc6-8b34de45b8be.gif)
-![rect](https://user-images.githubusercontent.com/951021/63556028-12ed8400-c4f8-11e9-8072-81702c9193e1.gif)
-![polygon](https://user-images.githubusercontent.com/951021/63980999-1e99f700-ca72-11e9-9786-1cba14d2d862.gif)
-![curve](https://user-images.githubusercontent.com/951021/64042667-3d9e9480-cb17-11e9-88d8-2f7b9da8b8ab.gif)
-![path](https://user-images.githubusercontent.com/951021/64070625-7a52b480-cc19-11e9-9380-eac02f56f693.gif)
-![gradient](https://user-images.githubusercontent.com/951021/64898668-da475300-d63c-11e9-917a-825b94be0710.gif)
-![circle_outline](https://user-images.githubusercontent.com/951021/65125594-84f7a280-d9aa-11e9-8bc4-669fd2eff2f4.gif)
-![ellipse_transform](https://user-images.githubusercontent.com/951021/67149013-06b54700-f25b-11e9-91eb-a61171c6d4a4.gif)
+This project was completed as part of an NSERC USRA at Carleton University's Graphics, Imaging, and Games Lab (GIGL), supervised by Dr. David Mould and Dr. Oliver van Kaick.
 
-# Install
+## What's different in this fork
+
+The original diffvg supports circles, ellipses, rectangles, polygons, curves, and paths, optimized against a target image via gradient descent through a differentiable rasterizer.
+
+For a fair point of comparison, `ellipse_diffvg.py` (on `master`) fits diffvg's own standard, hard-edged Ellipse primitive to a target image using the same N/iterations convention as the new kernels below — useful for directly seeing what smooth falloff buys you over diffvg's original hard-edged primitives.
+
+This fork adds five additional primitive types, each implemented as its own C++ kernel added onto the diffvg pipeline, and compares them against each other on image reconstruction tasks:
+
+- **Splatting kernels** — three variants, each a smooth radial falloff around a control point:
+  - **Wendland C2** — compact-support polynomial kernel, `(1-t)^4(4t+1)` (`wendland` branch)
+  - **Gaussian RBF** — standard Gaussian falloff, `exp(-t^2 / 2*sigma^2)` (`gaussian` branch)
+  - **Shepard IDW** — inverse-distance-weighted global interpolation, `1/dist^q` (`shepard` branch)
+- **Triangle soups** — independent triangles, no shared vertices/edges, each with a flat colour and a learnable opacity, composited via soft-rasterized alpha-over compositing (`trianglesoup` branch)
+
+
+Each kernel branch has both a plain O(N) renderer and a tile-grid accelerated ("boxed") variant that only evaluates primitives near each pixel, resulting in a faster reconstruction speed for a large
+N. Comparison scripts (`comparison_*.py`) reconstruct a target image starting from a degraded/blurred version, computing SSIM and LPIPS against the sharp original.
+
+*Instructions on how to run these scripts can be found below and inside the scripts themselves.*
+
+### Example output
+
+![ellipse diffvg reconstruction](docs/imgs/ellipse_diffvg_all_comparison.png)
+
+The **diffvg Ellipse baseline** (`master` branch, standard hard-edged diffvg, no smooth falloff) is shown here for comparison against the four primitives below. With a limited primitive budget, its reconstruction is visibly blocky: sharp, unblended boundaries between neighbouring ellipses and conspicuous gaps in regions the ellipse budget didn't happen to cover. This is the motivation for the smooth-kernel and flat-shaded primitives that follow.
+
+---
+
+![wendland reconstruction](docs/imgs/wendland_all_comparison.png)
+
+The **Wendland reconstruction** uses a compact-support polynomial kernel. Each control point influences only nearby pixels, producing a localized and smoothly blended reconstruction.
+
+---
+
+![gaussian reconstruction](docs/imgs/gaussian_all_comparison.png)
+
+The **Gaussian reconstruction** uses Gaussian radial basis functions. Each control point contributes a smooth falloff that extends across the image, with influence decreasing gradually as distance increases.
+
+---
+
+![shepard reconstruction](docs/imgs/shepard_all_comparison.png)
+
+The **Shepard reconstruction** uses inverse-distance weighting. Pixel values are interpolated from control points according to their distances, allowing contributions from points across the image.
+
+---
+
+![trianglesoup reconstruction](docs/imgs/trianglesoup_all_comparison.png)
+
+The **Triangle Soup reconstruction** represents the image using independent triangles. Each triangle has its own geometry, colour, and learnable opacity, and the triangles are composited to form the final reconstruction.
+
+## Branch structure
+
+Each primitive lives on its own branch, built off diffvg's `master`:
+
+| Branch | Primitive |
+|---|---|
+| `master` | Base diffvg (circles, ellipses, paths, etc.) |
+| `wendland` | Wendland C2 splatting kernel |
+| `gaussian` | Gaussian RBF splatting kernel |
+| `shepard` | Shepard IDW global interpolation |
+| `trianglesoup` | Independent triangle soup with learnable opacity |
+
+## Requirements
+
+Before installing, make sure you have the following set up on your system:
+
+- **Git** (with submodule support)
+- **Conda** (Miniconda or Anaconda) — used to manage the Python environment and dependencies
+- **C++ compiler with C++14 support**
+  - Linux/macOS: GCC or Clang
+  - Windows: MSVC (via the x64 Native Tools Command Prompt)
+- **CUDA Toolkit** (optional for GPU acceleration; CPU-only builds work but are significantly slower for large N)
+
+## Install
+
+Clone the repository, then initialize submodules from the repository root:
+
 ```
+git clone https://github.com/AbhishekS680/diffvg.git
+cd diffvg
 git submodule update --init --recursive
+```
+
+The Python environment is then set up with Conda. **On Windows, all Conda commands must be run from an Anaconda Prompt** rather than a standard Command Prompt or PowerShell window, since Conda's environment activation does not work correctly outside it:
+
+```
+conda create -n diffvg python=3.10
+conda activate diffvg
 conda install -y pytorch torchvision -c pytorch
 conda install -y numpy
 conda install -y scikit-image
 conda install -y -c anaconda cmake
 conda install -y -c conda-forge ffmpeg
+conda install -y matplotlib
 pip install svgwrite
 pip install svgpathtools
 pip install cssutils
 pip install numba
-pip install torch-tools
-pip install visdom
+pip install lpips
 python setup.py install
 ```
-# Install using poetry
 
-## prerequisite
-install python 3.7, poetry and ffmpeg
+**On Windows**, the build may additionally require explicitly setting a CMake generator matching your installed Visual Studio version, before running `python setup.py install`:
 
 ```
-# install poetry (mac, linux)
-curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-
-# install ffmpeg
-
-(macos)
-brew install ffmpeg
-
-(linux)
-sudo apt install ffmpeg
-
-or use conda
-conda install -y -c conda-forge ffmpeg
+set CMAKE_GENERATOR=Visual Studio 18 2026
 ```
 
-## Install python packages
+(the exact generator string depends on your Visual Studio version; adjust accordingly, or omit this step if the default generator works). Build from the x64 Native Tools Command Prompt with the conda environment activated.
+
+You can check if diffvg is installed correctly by running `python -c "import pydiffvg"` in the conda environment. If there are no errors, the installation was successful.
+
+**If a build fails for any reason**, delete the `build` directory before retrying. A stale `build` folder left over from a previous, differently configured attempt is a common source of otherwise confusing build errors:
 
 ```
-# install all python dependencies
-poetry install
-
-# install pydiffvg
-poetry run python setup.py install
+rm -rf build
+python setup.py install
 ```
 
-Now to run the apps, just add `poetry run` before each of the commands below, e.g.
+This same clean rebuild step is also required after switching branches, since each branch's C++ extension must be rebuilt from scratch.
+
+## Running a single primitive
 
 ```
-poetry run python single_circle.py
+cd apps
 ```
 
-# Building in debug mode
+Each primitive has a standalone rendering script that fits N control points/shapes directly to a target image. All accept `--n`, `--iters`, `--image`, and `--seed` to override the defaults (N=1000, 200 iterations, `imgs/fruit_basket.png`, seed=0) without editing the script:
+
+```
+python wendland_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python gaussian_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python shepard_rendering.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+python trianglesoup_rendering_boxed.py --n 500 --iters 100 --image imgs/cat.png --seed 0
+```
+
+`shepard_segmented.py` additionally takes `--seg-size` (Mean Shift bandwidth — smaller means more, finer segments):
+
+```
+python shepard_segmented.py --n 100 --iters 100 --image imgs/cat.png --seg-size 0.2 --seed 0
+```
+
+Each writes its outputs (final render, loss curve, error heatmap, timing, and several diagnostic visualizations) to `results/<script_name>/`. The boxed rendering scripts also run an optional **focus phase** after the main loop: a second round of iterations that reweights the loss toward pixels with the worst error from pass one, and reports whether that actually reduced error (`focus_summary.txt`) — this doesn't always help, and is itself a reportable per-primitive result.
+
+### Running every primitive at once
+
+`run_all_rendering.sh` runs all primitive scripts sequentially, switching branches automatically. `N`, `ITERS`, `IMAGE`, `SEG_SIZE`, and `SEED` are configurable via environment variables instead of editing the script:
+
+```
+chmod +x run_all_rendering.sh
+N=500 ITERS=100 IMAGE=imgs/cat.png SEED=0 ./run_all_rendering.sh
+```
+
+## Running a comparison (degraded → sharp reconstruction)
+
+The comparison scripts take a target (sharp) image and a degraded (blurred) image, and optimize the primitive's parameters to reconstruct the sharp image starting from the degraded one as the base canvas. They also accept `--n`/`--iters`/`--seed`:
+
+```
+python comparison_wendland_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_wendland_boxed --n 1000 --iters 200 --seed 0
+python comparison_gaussian_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_gaussian_boxed --n 1000 --iters 200 --seed 0
+python comparison_shepard.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_shepard --n 1000 --iters 200 --seed 0
+python comparison_trianglesoup_boxed.py --target imgs/level_0.png --degraded imgs/level_1.png --outdir results/comparison_trianglesoup_boxed --n 1000 --iters 200 --seed 0
+```
+
+Each comparison run outputs, among other things:
+- `all_comparison.png` — degraded | degraded-error | original | reconstruction | reconstruction-error, on a shared error color scale
+- `baseline_error.txt` / `focus_summary.txt` — quantitative error summaries
+- `timing.txt` — forward/backward pass timing
+
+### Running the full sweep
+
+`run_all_comparisons.sh` runs all four primitives across a chain of degradation levels, checking out each branch automatically, scoring each hop's reconstruction against the sharp target as it goes, and running the full `score_results.py` summary at the end.
+`N`, `ITERS`, `IMAGE_SET`, and `SEED` are configurable via environment variables — `IMAGE_SET` must match a folder under `imgs/` containing `level_0.png`..`level_4.png`, and results are written under `results/<IMAGE_SET>/...` to match:
+
+```
+chmod +x run_all_comparisons.sh
+N=500 ITERS=100 IMAGE_SET=Cat SEED=0 ./run_all_comparisons.sh
+```
+
+You should set your PC to not sleep during this process, as it can take several hours to complete all comparisons. On macOS, since environment variable assignments placed directly before `caffeinate` only apply to `caffeinate` itself (not the script it launches), use `caffeinate -i env` to pass them through correctly:
+
+```
+caffeinate -i env N=500 ITERS=100 IMAGE_SET=Cat SEED=0 ./run_all_comparisons.sh
+```
+
+`score_results.py` also accepts `--image-set` if you want to (re-)score a specific set manually:
+```
+python score_results.py --image-set Cat
+```
+which reports SSIM/LPIPS pass/fail per primitive per hop, using thresholds `SSIM > 0.9` and `LPIPS < 0.1`, and writes a summary table to `results/<IMAGE_SET>/level_summary.txt`.
+
+## Performance scaling (N vs. time)
+
+Each primitive has an `n_vs_time_*.py` script that measures forward/backward render time across a sweep of N values, for comparing how each primitive's cost scales:
+
+```
+python n_vs_time_wendland.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_wendland_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_gaussian.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_gaussian_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_shepard.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_trianglesoup.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+python n_vs_time_trianglesoup_boxed.py --image imgs/cat.png --n-values 100,500,1000 --sleep 5 --seed 0
+```
+
+`--n-values` is a comma-separated list (default `50,100,250,500,750,1000,1500,2000,3000,4000,5000`). `--sleep` controls the cooldown (seconds) between each N value, to avoid thermal throttling skewing later measurements. Each script writes a `.txt` timing table and a
+`.png` plot to `results/n_vs_time/`.
+
+Run every primitive's sweep at once with `run_all_n_vs_time.sh`, which accepts `IMAGE`, `N_VALUES`, `SLEEP`, and `SEED` as environment variables:
+
+```
+chmod +x run_all_n_vs_time.sh
+N_VALUES=100,500,1000 SLEEP=5 IMAGE=imgs/cat.png SEED=0 ./run_all_n_vs_time.sh
+```
+
+### Combined report tables and plots
+
+Once the raw `.txt` timing files exist, `make_n_vs_time_table.py` combines them into report-ready output, written into `results/n_vs_time/summary/` (kept separate from the raw per-script files):
+
+```
+python make_n_vs_time_table.py
+```
+
+This produces:
+- `n_vs_time_table.tex` / `n_vs_time_table.txt` -- a combined table (all primitives, one row per N)
+- `n_vs_time_combined.png` / `n_vs_time_combined_loglog.png` -- every primitive's timing curve overlaid on one plot, linear and log-log scale
+- For each primitive with both a plain and boxed variant (Wendland, Gaussian, Triangle Soup): an individual boxed-vs-plain comparison plot (`n_vs_time_<name>_boxed_vs_plain.png`, plus a log-log version) and a per-N speedup table in `n_vs_time_speedup_table.tex`
+
+`run_all_n_vs_time.sh` calls this automatically at the end of a full sweep. `make_n_vs_time_table.py` also accepts `--metric` (`forward_ms`, `backward_ms`, or `total_ms`, default `total_ms`) and `--outdir` to change where the summary is written.
+
+## Building in debug mode
 
 ```
 python setup.py build --debug install
 ```
 
-# Run
+---
+
+## More examples + command-line arguments
+
+Each example below shows the target image alongside a primitive's reconstruction, along
+with the command used to generate it. Swap in your own `--image`, `--n`, and `--iters`
+values to reproduce or vary these.
+
+### Baboon — Shepard IDW
+
+| Target | Shepard Reconstruction |
+| ------ | ----------------------- |
+| <img src="docs/imgs/baboon.png" width="400"> | <img src="docs/imgs/baboon_shepard.png" width="400"> |
+
 ```
-cd apps
+python shepard_rendering.py --image imgs/baboon.png --n 1000 --iters 200
 ```
 
-Optimizing a single circle to a target.
+---
+
+### Spider-Man — Wendland C2
+
+| Target | Wendland C2 Reconstruction |
+| ------ | ---------------------------- |
+| <img src="docs/imgs/spiderman.png" width="400"> | <img src="docs/imgs/spiderman_wendland.png" width="400"> |
+
 ```
-python single_circle.py
+python wendland_rendering_boxed.py --image imgs/spiderman.png --n 1000 --iters 200
 ```
 
-Finite difference comparison.
+---
+
+### Hokusai Wave — Gaussian RBF
+
+| Target | Gaussian RBF Reconstruction |
+| ------ | ----------------------------- |
+| <img src="docs/imgs/hokusai.png" width="400"> | <img src="docs/imgs/hokusai_gaussian.png" width="400"> |
+
 ```
-finite_difference_comp.py [-h] [--size_scale SIZE_SCALE]
-                               [--clamping_factor CLAMPING_FACTOR]
-                               [--use_prefiltering USE_PREFILTERING]
-                               svg_file
-```
-e.g.,
-```
-python finite_difference_comp.py imgs/tiger.svg
+python gaussian_rendering_boxed.py --image imgs/hokusai.png --n 1000 --iters 200
 ```
 
-Interactive editor
+---
+
+### Falling Water — Triangle Soup
+
+| Target | Triangle Soup Reconstruction |
+| ------ | ------------------------------ |
+| <img src="docs/imgs/fallingwater.png" width="400"> | <img src="docs/imgs/fallingwater_trianglesoup.png" width="400"> |
+
 ```
-python svg_brush.py
+python trianglesoup_rendering_boxed.py --image imgs/fallingwater.png --n 1000 --iters 200
 ```
 
-Painterly rendering
-```
-painterly_rendering.py [-h] [--num_paths NUM_PATHS]
-                       [--max_width MAX_WIDTH] [--use_lpips_loss]
-                       [--num_iter NUM_ITER] [--use_blob]
-                       target
-```
-e.g.,
-```
-python painterly_rendering.py imgs/fallingwater.jpg --num_paths 2048 --max_width 4.0 --use_lpips_loss
-```
+---
 
-Image vectorization
-```
-python refine_svg.py [-h] [--use_lpips_loss] [--num_iter NUM_ITER] svg target
-```
-e.g.,
-```
-python refine_svg.py imgs/flower.svg imgs/flower.jpg
-```
+## Original diffvg
 
-Seam carving
-```
-python seam_carving.py [-h] [--svg SVG] [--optim_steps OPTIM_STEPS]
-```
-e.g.,
-```
-python seam_carving.py imgs/hokusai.svg
-```
+The base rasterizer and its original usage (single-shape optimization, painterly rendering, image vectorization, seam carving, generative models) is documented at [https://people.csail.mit.edu/tzumao/diffvg/](https://people.csail.mit.edu/tzumao/diffvg/). See `apps/` for the original example scripts (`single_circle.py`, `painterly_rendering.py`, `refine_svg.py`, `seam_carving.py`, etc.), which still work unmodified on the `master` branch.
 
-Vector variational autoencoder & vector GAN:
-
-For the GAN models, see `apps/generative_models/train_gan.py`. Generate samples from a pretrained using `apps/generative_models/eval_gan.py`.
-
-For the VAE models, see `apps/generative_models/mnist_vae.py`.
-
-If you use diffvg in your academic work, please cite
-
+If you use diffvg in your academic work, please cite the original paper:
 ```
 @article{Li:2020:DVG,
     title = {Differentiable Vector Graphics Rasterization for Editing and Learning},
